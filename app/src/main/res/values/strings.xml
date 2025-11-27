@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">Face_Verification_App</string>
+
+    <!-- Neurotec NFaceView required strings -->
+    <string name="msg_put_face_on">Position your face in the frame</string>
+    <string name="msg_hold_face_for">Hold still...</string>
+    <string name="msg_capturing">Capturing...</string>
+    <string name="msg_move_closer">Move closer</string>
+    <string name="msg_move_away">Move back</string>
+    <string name="msg_too_dark">Too dark</string>
+    <string name="msg_too_bright">Too bright</string>
+    <string name="msg_looking_away">Look at camera</string>
+    <string name="msg_face_not_found">Face not found</string>
+    <string name="msg_multiple_faces">Multiple faces detected</string>
+    <string name="msg_face_too_close">Too close</string>
+    <string name="msg_face_too_far">Too far</string>
+    <string name="msg_face_in_progress">Processing...</string>
+    <string name="msg_face_ok">Face OK</string>
+    <string name="msg_face_captured">Face captured</string>
+</resources>
