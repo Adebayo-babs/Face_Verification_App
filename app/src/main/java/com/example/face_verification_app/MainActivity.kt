@@ -123,6 +123,11 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this,
                 "Camera permission required for face verification",
                 Toast.LENGTH_LONG).show()
+            // Go back to main menu if permission denied
+            currentScreen = Screen.MAIN_MENU
+            isMainMenuActive = true
+            cardReadingEnabled = true
+            telpoT20DataSource.resume()
         }
     }
 
@@ -251,23 +256,19 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onCancel = {
+                                    // Reset state when going back to main menu
+                                    resetVerificationState()
                                     currentScreen = Screen.MAIN_MENU
                                     isMainMenuActive = true
-
                                     cardReadingEnabled = true
                                     telpoT20DataSource.resume()
 
                                 }
                             )
                         }
-
-
-
 //                        Screen.SAM_PASSWORD_INPUT -> {
 //                            Toast.makeText(this, "SAM Password Input screen not yet implemented", Toast.LENGTH_SHORT).show()
 //                        }
-
-
                     }
 
 
@@ -288,6 +289,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // Helper function to reset verification state
+    private fun resetVerificationState() {
+        capturedFaceBitmap = null
+        nfcFaceBitmap = null
+        faceMatchResult = null
     }
 
     // Update the SAM_PASSWORD constant to be a variable
@@ -406,7 +414,18 @@ class MainActivity : ComponentActivity() {
                 nfcFaceImage = secureCardData.faceImage
 
                 isMainMenuActive = false
-                currentScreen = Screen.CARD_DETAILS
+//                currentScreen = Screen.CARD_DETAILS
+
+                // Skip card details screen and go directly to face capture
+                if (checkCameraPermission()) {
+                    currentScreen = Screen.CAMERA_CAPTURE
+                    isFaceVerificationActive = true
+                } else {
+                    // If permission is denied, stay on the main menu
+                    currentScreen = Screen.MAIN_MENU
+                    isMainMenuActive = true
+                    cardReadingEnabled = true
+                }
 
 
             } catch (e: Exception) {

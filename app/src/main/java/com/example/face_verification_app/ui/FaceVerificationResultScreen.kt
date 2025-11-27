@@ -1,6 +1,7 @@
 package com.example.face_verification_app.ui
 
 import android.graphics.Bitmap
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -46,6 +47,10 @@ fun FaceVerificationResultScreen(
     onConfirm: () -> Unit,
     onCancel: () -> Unit
 ) {
+
+    BackHandler {
+        onCancel()
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
