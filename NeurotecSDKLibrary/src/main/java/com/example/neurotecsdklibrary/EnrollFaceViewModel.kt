@@ -80,6 +80,14 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
                 setFacesDetectProperties(true)
                 isUseDeviceManager = true
                 deviceManager.deviceTypes = EnumSet.of(NDeviceType.CAMERA)
+
+
+                // SPEED OPTIMIZATIONS
+                facesQualityThreshold = 50  // Lower threshold (default is usually 70-80)
+                facesConfidenceThreshold = 1 // Lower confidence needed
+                setProperty("Faces.DetectAllFeaturePoints", "false")  // Disable extra feature detection
+                setProperty("Faces.RecognizeExpression", "false")  // Disable expression recognition
+
                 initialize()
             }
 
@@ -92,7 +100,7 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
                 main.postDelayed({
                     status = "Ready. Positioning your face..."
                     startAutomaticCapture()
-                }, 500)
+                }, 200)
             } else {
                 status = "No camera found"
             }
@@ -135,7 +143,7 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
                     main.post {
                         status = "Looking for face... Please position your face in view"
                         // Retry after a short delay
-                        main.postDelayed({ startAutomaticCapture() }, 1000)
+                        main.postDelayed({ startAutomaticCapture() }, 500)
                     }
                 }
 
@@ -145,7 +153,7 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
                 Log.e("EnrollFace", "Error during capture", e)
                 main.post {
                     status = "Capture error. Retrying..."
-                    main.postDelayed({ startAutomaticCapture() }, 1500)
+                    main.postDelayed({ startAutomaticCapture() }, 800)
                 }
             }
         }
@@ -195,50 +203,6 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
     fun setNFCCardData(faceImage: ByteArray) {
         nfcCardData = faceImage to ByteArray(0)
         Log.d("EnrollFace", "NFC data set, will auto-match when face captured")
-    }
-
-    private fun saveAndPrepareForMatching(subject: NSubject) {
-        try {
-            val face = subject.faces[0]
-            val imageBytes = face.image?.save()?.toByteArray()
-            val templateBytes = subject.templateBuffer?.toByteArray()
-
-            if (imageBytes != null && templateBytes != null) {
-                // Convert captured face to bitmap
-                capturedFaceBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-                executor.execute {
-                    //Save to database
-                    AppDatabase.getInstance(getApplication())
-                        .faceDao()
-                        .insert(
-                            FaceTemplateEntity(
-                                template = templateBytes,
-                                image = imageBytes,
-                                timestamp = System.currentTimeMillis()
-                            )
-                        )
-
-                    main.post {
-                        status = "Capture saved. Ready for matching"
-                    }
-
-//                    val dbTemp = AppDatabase.getInstance(getApplication())
-//                        .faceDao()
-//                        .getAll()
-//
-//                    val match = performMatching(templateBytes, dbTemp)
-
-//                    main.post {
-//                        matchResult = match
-//                        status = "Saved to database."
-//                    }
-                }
-            } else {
-                main.post { status = "Failed to extract face data" }
-            }
-        } catch (e: Exception) {
-            main.post { status = "Save error: ${e.message}" }
-        }
     }
 
     fun matchWithNFCFace(nfcFaceBytes: ByteArray) {
@@ -371,41 +335,6 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
             }
         }
     }
-
-//    private fun performMatching(
-//        capturedTemplate: ByteArray,
-//        storedTemplates: List<FaceTemplateEntity>
-//    ): FaceMatchResult {
-//        var bestScore = 0
-//        var bestMatch: FaceTemplateEntity? = null
-//
-//        val capturedSubject = NSubject()
-//        capturedSubject.templateBuffer = capturedTemplate
-//
-//        val biometricClient = NBiometricClient()
-//        biometricClient.initialize()
-//
-//        for (template in storedTemplates) {
-//            val dbSubject = NSubject()
-//            dbSubject.templateBuffer = template.template
-//
-//            val status = biometricClient.verify(capturedSubject, dbSubject)
-//            if (status == NBiometricStatus.OK) {
-//                val score = capturedSubject.matchingResults[0].score
-//                if (score > bestScore) {
-//                    bestScore = score
-//                    bestMatch = template
-//                }
-//            }
-//        }
-//
-//        return FaceMatchResult(
-//            capturedFace = capturedTemplate,
-//            nfcFace = bestMatch?.image,
-//            score = bestScore,
-//            isMatch = bestScore >= 70
-//        )
-//    }
 
 
     fun verifyFaces(reference: NSubject, candidate: NSubject, callback: (status: NBiometricStatus, score: Int?) -> Unit) {

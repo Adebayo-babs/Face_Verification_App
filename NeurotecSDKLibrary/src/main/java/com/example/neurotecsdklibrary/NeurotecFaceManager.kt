@@ -106,75 +106,6 @@ class NeurotecFaceManager(private val context: Context) {
         }
     }
 
-    suspend fun extractFaceFromNFC(faceImageData: ByteArray): Result<NSubject> = withContext(Dispatchers.IO) {
-        try {
-            Log.d(TAG, "=== EXTRACTING FACE FROM NFC ===")
-            Log.d(TAG, "NFC data size: ${faceImageData.size} bytes")
-
-            val bitmap = try {
-                android.graphics.BitmapFactory.decodeByteArray(faceImageData, 0, faceImageData.size)
-            } catch (e: Exception) {
-                Log.e(TAG, " Failed to decode NFC image data to bitmap", e)
-                throw e
-            }
-
-            if (bitmap == null) {
-                Log.e(TAG, " NFC image data could not be decoded to bitmap")
-                return@withContext Result.failure(Exception("Invalid image data from NFC"))
-            }
-
-            Log.d(TAG, " NFC image decoded: ${bitmap.width}x${bitmap.height}")
-
-            // Use the bitmap extraction method instead
-            return@withContext extractFaceTemplate(bitmap)
-
-        } catch (e: Exception) {
-            Log.e(TAG, " Error extracting face from NFC", e)
-            e.printStackTrace()
-            Result.failure(e)
-        }
-    }
-
-    suspend fun matchFaces(probe: NSubject, gallery: NSubject): Result<MatchResult> = withContext(Dispatchers.IO) {
-        try {
-            Log.d(TAG, "Starting face matching...")
-
-            val client = biometricClient
-
-            // Perform matching
-            val status = client.verify(probe, gallery)
-
-            if (status != NBiometricStatus.OK && status != NBiometricStatus.MATCH_NOT_FOUND) {
-                Log.e(TAG, "Matching returned status: $status")
-                return@withContext Result.failure(Exception("Matching failed with status: $status"))
-            }
-
-            // Get matching score
-            val score = if (probe.matchingResults != null && probe.matchingResults.size > 0) {
-                probe.matchingResults[0].score
-            } else {
-                0
-            }
-
-            val isMatch = status == NBiometricStatus.OK
-
-            Log.d(TAG, "✅ Matching completed - Score: $score, Match: $isMatch")
-
-            Result.success(
-                MatchResult(
-                score = score,
-                isMatch = isMatch,
-                threshold = 48
-            )
-            )
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error during matching", e)
-            e.printStackTrace()
-            Result.failure(e)
-        }
-    }
-
     fun release() {
         try {
             biometricClient.dispose()
@@ -187,16 +118,3 @@ class NeurotecFaceManager(private val context: Context) {
 
 
 }
-
-data class MatchResult(
-    val score: Int,
-    val isMatch: Boolean,
-    val threshold: Int
-)
-
-data class FaceQuality(
-    val overallQuality: Int,
-    val sharpness: Int,
-    val brightness: Int,
-    val isPassed: Boolean
-)

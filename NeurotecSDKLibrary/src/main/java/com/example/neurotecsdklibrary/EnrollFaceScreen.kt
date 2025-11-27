@@ -48,29 +48,6 @@ fun EnrollFaceScreen(
     viewModel: EnrollFaceViewModel = viewModel()
 ) {
 
-//    val showDialog = remember { mutableStateOf(false) }
-//
-//    BackHandler {
-//        showDialog.value = true
-//    }
-//
-//    if (showDialog.value) {
-//        AlertDialog(
-//            onDismissRequest = { showDialog.value = false },
-//            title = { Text("Exit Enrollment?") },
-//            text = { Text("Are you sure you want to stop face enrollment?") },
-//            confirmButton = {
-//                TextButton(onClick = {
-//                    showDialog.value = false
-//                    // exit the screen
-//                }) { Text("Yes") }
-//            },
-//            dismissButton = {
-//                TextButton(onClick = { showDialog.value = false }) { Text("No") }
-//            }
-//        )
-//    }
-
     val context = LocalContext.current
     val status = viewModel.status
 
@@ -183,6 +160,4 @@ fun EnrollFaceScreen(
             Spacer(Modifier.height(32.dp))
         }
     }
-
-
 }

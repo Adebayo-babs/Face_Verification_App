@@ -436,41 +436,6 @@ class SAMCardReader {
         return foundAny
     }
 
-//    private fun extractFaceImage(enumeratedData: List<EnumeratedData>): ByteArray? {
-//        val allData = enumeratedData
-//            .filter { it.sfi == 2 } // Prefer SFI 2 (JPEG zone)
-//            .flatMap { it.data.toList() }
-//            .toByteArray()
-//
-//        // Look for JPEG markers
-//        val start = allData.indexOfSequence(byteArrayOf(0xFF.toByte(), 0xD8.toByte())) // SOI
-//        val end = allData.indexOfSequence(byteArrayOf(0xFF.toByte(), 0xD9.toByte()))   // EOI
-//
-//        if (start != -1 && end != -1 && end > start) {
-//            val jpegBytes = allData.copyOfRange(start, end + 2)
-//            Log.d(TAG, "Extracted clean JPEG (${jpegBytes.size} bytes)")
-//            return jpegBytes
-//        }
-//
-//        // Fallback: try GIF (SFI 3)
-//        val gifData = enumeratedData
-//            .filter { it.sfi == 3 }
-//            .flatMap { it.data.toList() }
-//            .toByteArray()
-//        val gifStart = gifData.indexOfSequence("GIF89a".toByteArray())
-//        val gifEnd = gifData.indexOfSequence(byteArrayOf(0x00, 0x3B)) // GIF trailer
-//
-//        if (gifStart != -1 && gifEnd != -1 && gifEnd > gifStart) {
-//            val gifBytes = gifData.copyOfRange(gifStart, gifEnd + 2)
-//            Log.d(TAG, " Extracted clean GIF (${gifBytes.size} bytes)")
-//            return gifBytes
-//        }
-//
-//        Log.e(TAG, " No valid JPEG or GIF found in card data")
-//        return null
-//    }
-
-
     private fun extractFaceImage(enumeratedData: List<EnumeratedData>): ByteArray? {
 
         val sfi2Data = enumeratedData
