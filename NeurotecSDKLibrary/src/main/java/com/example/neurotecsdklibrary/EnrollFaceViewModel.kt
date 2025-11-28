@@ -15,6 +15,7 @@ import com.example.neurotecsdklibrary.data.FaceTemplateEntity
 import com.neurotec.biometrics.NBiometricCaptureOption
 import com.neurotec.biometrics.NBiometricOperation
 import com.neurotec.biometrics.NBiometricStatus
+import com.neurotec.biometrics.NFAttributes
 import com.neurotec.biometrics.NFace
 import com.neurotec.biometrics.NSubject
 import com.neurotec.biometrics.client.NBiometricClient
@@ -22,12 +23,47 @@ import com.neurotec.devices.NCamera
 import com.neurotec.devices.NDeviceType
 import com.neurotec.images.NImage
 import com.neurotec.io.NBuffer
-import com.neurotec.plugins.NDataFileManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.EnumSet
 import java.util.concurrent.Executors
 
 
+data class FaceDetectionFeedback(
+    val lightingStatus: LightingStatus = LightingStatus.UNKNOWN,
+    val distanceStatus: DistanceStatus = DistanceStatus.UNKNOWN,
+    val positionStatus: PositionStatus = PositionStatus.UNKNOWN,
+    val qualityStatus: QualityStatus = QualityStatus.UNKNOWN,
+    val overallMessage: String = "Position your face in view"
+)
+
+enum class LightingStatus {
+    GOOD, TOO_DARK, TOO_BRIGHT, UNKNOWN
+}
+
+enum class DistanceStatus {
+    GOOD, TOO_FAR, TOO_CLOSE, UNKNOWN
+}
+
+enum class PositionStatus {
+    CENTERED, MOVE_LEFT, MOVE_RIGHT, MOVE_UP, MOVE_DOWN, UNKNOWN
+}
+
+enum class QualityStatus {
+    EXCELLENT, GOOD, FAIR, POOR, UNKNOWN
+}
+
 class EnrollFaceViewModel (application: Application) : AndroidViewModel(application) {
+
+    var detectionFeedback by mutableStateOf(FaceDetectionFeedback())
+        private set
 
     var matchResult by mutableStateOf<FaceMatchResult?>(null)
         private set
@@ -47,17 +83,18 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
     var nfcFaceBitmap by mutableStateOf<Bitmap?>(null)
         private set
 
-    // Callback when face is captured and ready for matching
     var onFaceCaptured: ((ByteArray, ByteArray) -> Unit)? = null
-
-    // Store NFC data for auto-matching
-    private var nfcCardData: Pair<ByteArray, ByteArray>? = null // (faceImage, template)
-
-
     var onMatchComplete: ((FaceMatchResult) -> Unit)? = null
+    var onFaceDetectedSound: (() -> Unit)? = null
+
+    private var nfcCardData: Pair<ByteArray, ByteArray>? = null
 
     private val executor = Executors.newSingleThreadExecutor()
     private val main = android.os.Handler(Looper.getMainLooper())
+
+    // Add coroutine support for continuous feedback
+    private var feedbackMonitorJob: Job? = null
+    private val feedbackScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     fun initialize() {
         executor.execute {
@@ -66,7 +103,6 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
                 main.post {
                     status = "Licenses OK - Initializing"
                     initClient()
-//                    startCapture()
                 }
             } catch (e: Exception) {
                 main.post { status = "License Error: ${e.message}" }
@@ -81,12 +117,10 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
                 isUseDeviceManager = true
                 deviceManager.deviceTypes = EnumSet.of(NDeviceType.CAMERA)
 
-
-                // SPEED OPTIMIZATIONS
-                facesQualityThreshold = 50  // Lower threshold (default is usually 70-80)
-                facesConfidenceThreshold = 1 // Lower confidence needed
-                setProperty("Faces.DetectAllFeaturePoints", "false")  // Disable extra feature detection
-                setProperty("Faces.RecognizeExpression", "false")  // Disable expression recognition
+                facesQualityThreshold = 50
+                facesConfidenceThreshold = 1
+                setProperty("Faces.DetectAllFeaturePoints", "false")
+                setProperty("Faces.RecognizeExpression", "false")
 
                 initialize()
             }
@@ -96,7 +130,6 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
                 val camera = cameras[0] as NCamera
                 biometricClient?.faceCaptureDevice = camera
 
-                // Automatically start capture after initialization
                 main.postDelayed({
                     status = "Ready. Positioning your face..."
                     startAutomaticCapture()
@@ -113,7 +146,12 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
         executor.execute {
             try {
                 Log.d("EnrollFace", "Starting automatic capture...")
-                main.post { status = "Detecting face..." }
+                main.post {
+                    status = "Detecting face..."
+                    detectionFeedback = FaceDetectionFeedback(
+                        overallMessage = "Looking for face..."
+                    )
+                }
 
                 val subject = NSubject()
                 val face = NFace().apply {
@@ -123,6 +161,9 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
                 subject.faces.add(face)
                 main.post { currentSubject = subject }
 
+                // Start continuous feedback monitoring
+                startContinuousFeedbackMonitoring(subject)
+
                 val task = biometricClient?.createTask(
                     EnumSet.of(NBiometricOperation.CAPTURE, NBiometricOperation.CREATE_TEMPLATE),
                     subject
@@ -130,19 +171,30 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
 
                 task?.let { biometricClient?.performTask(it) }
 
+                // Stop feedback monitoring
+                stopContinuousFeedbackMonitoring()
+
                 val taskStatus = task?.status
 
                 if (taskStatus == NBiometricStatus.OK) {
                     Log.d("EnrollFace", "Face captured successfully!")
                     main.post {
                         status = "Face captured! Processing..."
+                        detectionFeedback = FaceDetectionFeedback(
+                            lightingStatus = LightingStatus.GOOD,
+                            distanceStatus = DistanceStatus.GOOD,
+                            positionStatus = PositionStatus.CENTERED,
+                            qualityStatus = QualityStatus.EXCELLENT,
+                            overallMessage = "Perfect! Hold still! Processing"
+                        )
                         saveAndTriggerMatching(subject)
                     }
                 } else {
+                    val feedback = analyzeFaceAttributes(subject)
                     Log.w("EnrollFace", "Capture failed: $taskStatus")
                     main.post {
-                        status = "Looking for face... Please position your face in view"
-                        // Retry after a short delay
+                        status = feedback.overallMessage
+                        detectionFeedback = feedback
                         main.postDelayed({ startAutomaticCapture() }, 500)
                     }
                 }
@@ -151,11 +203,132 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
 
             } catch (e: Exception) {
                 Log.e("EnrollFace", "Error during capture", e)
+                stopContinuousFeedbackMonitoring()
                 main.post {
                     status = "Capture error. Retrying..."
+                    detectionFeedback = FaceDetectionFeedback(
+                        overallMessage = "Capture error. Retrying..."
+                    )
                     main.postDelayed({ startAutomaticCapture() }, 800)
                 }
             }
+        }
+    }
+
+    private fun startContinuousFeedbackMonitoring(subject: NSubject) {
+        feedbackMonitorJob?.cancel()
+        feedbackMonitorJob = feedbackScope.launch {
+            while (isActive) {
+                try {
+                    val feedback = analyzeFaceAttributes(subject)
+                    withContext(Dispatchers.Main) {
+                        if (!status.contains("captured", ignoreCase = true) &&
+                            !status.contains("processing", ignoreCase = true)) {
+                            detectionFeedback = feedback
+                        }
+                    }
+                    delay(100) // Update every 100ms
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
+        }
+    }
+
+    private fun stopContinuousFeedbackMonitoring() {
+        feedbackMonitorJob?.cancel()
+        feedbackMonitorJob = null
+    }
+
+    private fun analyzeFaceAttributes(subject: NSubject): FaceDetectionFeedback {
+        try {
+            val face = subject.faces.firstOrNull()
+            val attributes = face?.objects?.firstOrNull() as? NFAttributes
+
+            if (attributes == null) {
+                return FaceDetectionFeedback(
+                    overallMessage = "No face detected - Please face the camera"
+                )
+            }
+
+            val sharpness = attributes.quality
+            val lighting = when {
+                sharpness > 70 -> LightingStatus.GOOD
+                sharpness > 50 -> LightingStatus.TOO_DARK
+                else -> LightingStatus.TOO_DARK
+            }
+
+            val boundingRect = attributes.boundingRect
+            val faceWidth = boundingRect.width()
+            val distanceStatus = when {
+                faceWidth > 400 -> DistanceStatus.TOO_CLOSE
+                faceWidth in 200..400 -> DistanceStatus.GOOD
+                faceWidth in 100..200 -> DistanceStatus.TOO_FAR
+                else -> DistanceStatus.TOO_FAR
+            }
+
+            val centerX = boundingRect.centerX() + boundingRect.width() / 2
+            val centerY = boundingRect.centerY() + boundingRect.height() / 2
+            val positionStatus = when {
+                centerX < 250 -> PositionStatus.MOVE_RIGHT
+                centerX > 390 -> PositionStatus.MOVE_LEFT
+                centerY < 200 -> PositionStatus.MOVE_DOWN
+                centerY > 280 -> PositionStatus.MOVE_UP
+                else -> PositionStatus.CENTERED
+            }
+
+            val quality = attributes.quality
+            val qualityStatus = when {
+                quality > 80 -> QualityStatus.EXCELLENT
+                quality > 60 -> QualityStatus.GOOD
+                quality > 40 -> QualityStatus.FAIR
+                else -> QualityStatus.POOR
+            }
+
+            val messages = mutableListOf<String>()
+
+            when (lighting) {
+                LightingStatus.GOOD -> messages.add("✓ Lighting OK")
+                LightingStatus.TOO_DARK -> messages.add("⚠ Too dark")
+                LightingStatus.TOO_BRIGHT -> messages.add("⚠ Too bright")
+                else -> {}
+            }
+
+            when (distanceStatus) {
+                DistanceStatus.GOOD -> messages.add("✓ Distance OK")
+                DistanceStatus.TOO_FAR -> messages.add("⚠ Move closer")
+                DistanceStatus.TOO_CLOSE -> messages.add("⚠ Move back")
+                else -> {}
+            }
+
+            when (positionStatus) {
+                PositionStatus.CENTERED -> messages.add("✓ Position OK")
+                PositionStatus.MOVE_LEFT -> messages.add("← Move left")
+                PositionStatus.MOVE_RIGHT -> messages.add("→ Move right")
+                PositionStatus.MOVE_UP -> messages.add("↑ Move up")
+                PositionStatus.MOVE_DOWN -> messages.add("↓ Move down")
+                else -> {}
+            }
+
+            val overallMessage = if (messages.isEmpty()) {
+                "Adjusting... Hold still"
+            } else {
+                messages.joinToString(" • ")
+            }
+
+            return FaceDetectionFeedback(
+                lightingStatus = lighting,
+                distanceStatus = distanceStatus,
+                positionStatus = positionStatus,
+                qualityStatus = qualityStatus,
+                overallMessage = overallMessage
+            )
+
+        } catch (e: Exception) {
+            Log.e("EnrollFace", "Error analyzing face attributes", e)
+            return FaceDetectionFeedback(
+                overallMessage = "Analyzing... Please hold still"
+            )
         }
     }
 
@@ -168,8 +341,10 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
             if (imageBytes != null && templateBytes != null) {
                 capturedFaceBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
 
+                main.post{
+                    onFaceDetectedSound?.invoke()
+                }
                 executor.execute {
-                    // Save to database
                     AppDatabase.getInstance(getApplication())
                         .faceDao()
                         .insert(
@@ -182,11 +357,8 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
 
                     main.post {
                         status = "Face saved. Starting verification..."
-
-                        // Notify that face is captured
                         onFaceCaptured?.invoke(imageBytes, templateBytes)
 
-                        // If NFC data is already available, automatically match
                         nfcCardData?.let { (nfcImage, _) ->
                             matchWithNFCFace(nfcImage)
                         }
@@ -210,7 +382,6 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
             try {
                 main.post { status = "Matching faces..." }
 
-                // Get the most recent captured face from database
                 val latestCapture = AppDatabase.getInstance(getApplication())
                     .faceDao()
                     .getLatest()
@@ -220,24 +391,17 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
                     return@execute
                 }
 
-                // Convert NFC face bytes to bitmap
                 nfcFaceBitmap = BitmapFactory.decodeByteArray(nfcFaceBytes, 0, nfcFaceBytes.size)
 
-                // Create subjects for matching
                 val capturedSubject = NSubject()
                 capturedSubject.setTemplateBuffer(NBuffer(latestCapture.template))
 
                 val nfcSubject = NSubject()
-
-                // Try to extract template from NFC image
                 val nfcFace = NFace()
-
-
                 val nfcImage = NImage.fromMemory(NBuffer(nfcFaceBytes))
                 nfcFace.image = nfcImage
                 nfcSubject.faces.add(nfcFace)
 
-                // Create template for NFC face
                 val templateTask = biometricClient?.createTask(
                     EnumSet.of(NBiometricOperation.CREATE_TEMPLATE),
                     nfcSubject
@@ -250,7 +414,6 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
                     return@execute
                 }
 
-                // Perform matching
                 main.post { status = "Comparing faces..." }
                 val matchStatus = biometricClient?.verify(capturedSubject, nfcSubject)
 
@@ -270,8 +433,6 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
                 main.post {
                     matchResult = result
                     status = if (result.isMatch) "Faces Match!" else "Faces Do Not Match"
-
-                    // Notify listener to navigate to result screen
                     onMatchComplete?.invoke(result)
                 }
 
@@ -336,7 +497,6 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
         }
     }
 
-
     fun verifyFaces(reference: NSubject, candidate: NSubject, callback: (status: NBiometricStatus, score: Int?) -> Unit) {
         executor.execute {
             try {
@@ -349,18 +509,19 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
         }
     }
 
-
     fun reset() {
         matchResult = null
         capturedFaceBitmap = null
         nfcFaceBitmap = null
         status = ""
+        detectionFeedback = FaceDetectionFeedback()
     }
-
 
     override fun onCleared() {
         super.onCleared()
         try {
+            stopContinuousFeedbackMonitoring()
+            feedbackScope.cancel()
             biometricClient?.cancel()
             biometricClient?.dispose()
             currentSubject = null
@@ -369,6 +530,4 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
         }
         executor.shutdown()
     }
-
-
 }

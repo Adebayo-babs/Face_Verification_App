@@ -67,6 +67,8 @@ dependencies {
         "include" to listOf("*.jar", "*.aar")
     )))
 
+    implementation(fileTree(mapOf("dir" to "../libs", "include" to listOf("*.aar", "*.jar"))))
+
     implementation(project(":common"))
 
     implementation("androidx.core:core-ktx:1.12.0")

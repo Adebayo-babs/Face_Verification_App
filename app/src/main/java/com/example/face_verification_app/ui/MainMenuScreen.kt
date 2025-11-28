@@ -70,17 +70,17 @@ fun MainMenuScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = "Banana Island",
+                        text = "ACCESS VALIDATOR",
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.Black
                     )
-                    Text(
-                        text = "Access Validator",
-                        fontSize = 16.sp,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
+//                    Text(
+//                        text = "Access Validator",
+//                        fontSize = 16.sp,
+//                        color = Color.Gray,
+//                        modifier = Modifier.padding(top = 4.dp)
+//                    )
                 }
 
                 Box {
@@ -207,7 +207,7 @@ fun LoaderOverlay() {
             CircularProgressIndicator(color = Color.White)
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Please wait…\nCard is reading$dots",
+                text = "Please wait…\nDo not remove the card!\nCard is reading$dots",
                 color = Color.White,
                 fontSize = 18.sp,
                 textAlign = TextAlign.Center,

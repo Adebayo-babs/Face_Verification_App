@@ -8,7 +8,9 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.media.AudioManager
 import android.media.MediaPlayer
+import android.media.ToneGenerator
 import android.nfc.NfcAdapter
 import android.nfc.tech.IsoDep
 import android.os.Bundle
@@ -29,7 +31,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.common.apiutil.nfc.Nfc
@@ -41,8 +42,6 @@ import com.example.face_verification_app.ui.FaceVerificationResultScreen
 import com.example.face_verification_app.ui.MainMenuScreen
 import com.example.face_verification_app.ui.SplashScreen
 import com.example.face_verification_app.ui.theme.Face_Verification_AppTheme
-import com.example.neurotecsdklibrary.EnrollFaceScreen
-import com.example.neurotecsdklibrary.EnrollFaceViewModel
 import com.example.neurotecsdklibrary.NeurotecFaceManager
 import com.example.neurotecsdklibrary.NeurotecLicenseHelper
 import dagger.hilt.android.AndroidEntryPoint
@@ -55,7 +54,8 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
 
     private var nfcAdapter: NfcAdapter? = null
-    private var mediaPlayer: MediaPlayer? = null
+    private var cardTapPlayer: MediaPlayer? = null
+    private var faceDetectedPlayer: MediaPlayer? = null
 
     companion object {
         private const val TAG = "MainActivity"
@@ -135,7 +135,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         sharedPreferences = getSharedPreferences("CardAppPrefs", Context.MODE_PRIVATE)
-//        mediaPlayer = MediaPlayer.create(this, R.raw.success)
+        cardTapPlayer = MediaPlayer.create(this, R.raw.success)
+        faceDetectedPlayer = MediaPlayer.create(this, R.raw.success)
 
         Log.d(TAG, "MainActivity onCreate - checking licenses...")
         Log.d(TAG, "Licenses activated in Application: ${FaceMatchApplication.areLicensesActivated}")
@@ -228,6 +229,18 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onNavigateToResult = {
                                     currentScreen = Screen.FACE_VERIFICATION
+                                },
+                                onBackToMainMenu = {
+                                    resetVerificationState()
+                                    currentScreen = Screen.MAIN_MENU
+                                    isMainMenuActive = true
+                                    cardReadingEnabled = true
+                                    telpoT20DataSource.resume()
+                                },
+                                onPlayFaceDetectedSound = {
+//                                    faceDetectedPlayer?.start()
+                                    val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 1000)
+                                    toneGen.startTone(ToneGenerator.TONE_CDMA_EMERGENCY_RINGBACK, 1000)
                                 }
 
                             )
@@ -381,7 +394,11 @@ class MainActivity : ComponentActivity() {
         }
 
         showFaceVerificationDialog = true
-        mediaPlayer?.start()
+
+//        val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
+//        toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+
+        cardTapPlayer?.start()
 
         readingJob = lifecycleScope.launch {
             try {
@@ -500,8 +517,8 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
 
-        mediaPlayer?.release()
-        mediaPlayer = null
+        cardTapPlayer?.release()
+        cardTapPlayer = null
 
 
         // Release Neurotec licenses

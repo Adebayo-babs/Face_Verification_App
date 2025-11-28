@@ -300,11 +300,10 @@ fun SplashScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Banana Island",
-                    fontSize = 40.sp,
+                    text = "ACCESS VALIDATOR",
+                    fontSize = 35.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    letterSpacing = 1.sp
+                    color = Color.White
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
