@@ -21,7 +21,32 @@ class SAMCardReader {
         private const val SW_SUCCESS = 0x9000
         private const val SW_FILE_NOT_FOUND = 0x6A82
         private const val SW_RECORD_NOT_FOUND = 0x6A83
+    }
 
+    data class FingerprintData(
+        val template: ByteArray?,
+        val fingerIndex: Int = 0, // Which finger (1-10)
+        val format: String = "UNKNOWN" // ISO, ANSI, WSQ, etc.
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+            other as FingerprintData
+            if (template != null) {
+                if (other.template == null) return false
+                if (!template.contentEquals(other.template)) return false
+            } else if (other.template != null) return false
+            if (fingerIndex != other.fingerIndex) return false
+            if (format != other.format) return false
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = template?.contentHashCode() ?: 0
+            result = 31 * result + fingerIndex
+            result = 31 * result + format.hashCode()
+            return result
+        }
     }
 
     data class SecureCardData(
@@ -29,6 +54,7 @@ class SAMCardReader {
         val surname: String?,
         val firstName: String?,
         val faceImage: ByteArray?,
+        val fingerprintData: List<FingerprintData> = emptyList(), // NEW: Support multiple fingerprints
         val additionalInfo: Map<String, String> = emptyMap(),
         val isAuthenticated: Boolean = false
     )
@@ -53,6 +79,7 @@ class SAMCardReader {
                 surname = null,
                 firstName = null,
                 faceImage = null,
+                fingerprintData = emptyList(),
                 additionalInfo = mapOf("error" to "No device provided"),
                 isAuthenticated = false
             )
@@ -68,6 +95,7 @@ class SAMCardReader {
         var holderName: String? = null
         var firstName: String? = null
         var faceImage: ByteArray? = null
+        val fingerprintData = mutableListOf<FingerprintData>()
         var isAuthenticated = false
         val additionalInfo = mutableMapOf<String, String>()
         val enumeratedData = mutableListOf<EnumeratedData>()
@@ -77,23 +105,17 @@ class SAMCardReader {
             isoDep.timeout = 10000
             Log.d(TAG, "IsoDep connected, starting SAM authentication")
 
-            // Select SAM application
             if (!selectSAMApplication(isoDep, SAM_AID)) {
                 additionalInfo["error"] = "SAM application not found"
                 Log.e(TAG, "Failed to select SAM application")
                 return SecureCardData(
-                    cardId,
-                    holderName,
-                    firstName,
-                    faceImage,
-                    additionalInfo,
-                    false
+                    cardId, holderName, firstName, faceImage,
+                    fingerprintData, additionalInfo, false
                 )
             }
 
             Log.d(TAG, "SAM application selected successfully")
 
-            // Authenticate with SAM using password
             isAuthenticated = authenticateWithSAM(
                 { cmd -> isoDep.transceive(cmd) },
                 samPassword,
@@ -110,13 +132,20 @@ class SAMCardReader {
                 firstName = parsed["firstName"]
                 additionalInfo.putAll(parsed)
 
-                // Extract face image - look for largest image data across all SFIs
                 faceImage = extractFaceImage(enumeratedData)
+                fingerprintData.addAll(extractFingerprints(enumeratedData))
 
                 if (faceImage != null) {
-                    Log.d(TAG, " Face image extracted: ${faceImage.size} bytes")
+                    Log.d(TAG, "Face image extracted: ${faceImage.size} bytes")
+                }
+
+                if (fingerprintData.isNotEmpty()) {
+                    Log.d(TAG, "Extracted ${fingerprintData.size} fingerprint(s)")
+                    fingerprintData.forEachIndexed { idx, fp ->
+                        Log.d(TAG, "  Fingerprint $idx: ${fp.template?.size ?: 0} bytes, format: ${fp.format}")
+                    }
                 } else {
-                    Log.w(TAG, " No face image found in card data")
+                    Log.w(TAG, "No fingerprint data found")
                 }
             } else {
                 Log.e(TAG, "SAM authentication failed")
@@ -137,12 +166,8 @@ class SAMCardReader {
         }
 
         return SecureCardData(
-            cardId,
-            holderName,
-            firstName,
-            faceImage,
-            additionalInfo,
-            isAuthenticated
+            cardId, holderName, firstName, faceImage,
+            fingerprintData, additionalInfo, isAuthenticated
         )
     }
 
@@ -156,6 +181,7 @@ class SAMCardReader {
             var holderName: String? = null
             var firstName: String? = null
             var faceImage: ByteArray? = null
+            val fingerprintData = mutableListOf<FingerprintData>()
             var isAuthenticated = false
             val additionalInfo = mutableMapOf<String, String>()
             val enumeratedData = mutableListOf<EnumeratedData>()
@@ -165,72 +191,47 @@ class SAMCardReader {
 
                 val transceiveFn: (ByteArray) -> ByteArray = { cmd ->
                     try {
-                        val response = nfcDevice.transmit(cmd, cmd.size)
-                        response
+                        nfcDevice.transmit(cmd, cmd.size)
                     } catch (e: Exception) {
                         Log.e(TAG, "Telpo transceive error: ${e.message}", e)
                         throw e
                     }
                 }
 
-                // Select SAM application
                 if (!selectSAMApplicationWithFn(transceiveFn, SAM_AID)) {
                     additionalInfo["error"] = "SAM application not found on card"
                     Log.e(TAG, "Failed to select SAM application on Telpo device")
                     return@withContext SecureCardData(
-                        cardId,
-                        holderName,
-                        firstName,
-                        faceImage,
-                        additionalInfo,
-                        false
+                        cardId, holderName, firstName, faceImage,
+                        fingerprintData, additionalInfo, false
                     )
                 }
 
                 Log.d(TAG, "SAM application selected successfully on Telpo device")
-
-                // Authenticate with SAM
-                Log.d(TAG, "Starting SAM authentication on Telpo device")
-                isAuthenticated =
-                    authenticateWithSAM(transceiveFn, samPassword, samKeyIndex, enumeratedData)
+                isAuthenticated = authenticateWithSAM(
+                    transceiveFn, samPassword, samKeyIndex, enumeratedData
+                )
 
                 if (isAuthenticated) {
                     Log.d(TAG, "SAM authentication successful on Telpo device, parsing data")
 
-                    // ALWAYS LOG ALL DATA FIRST FOR DEBUGGING
-//                    Log.d(TAG, "=== DEBUGGING ALL ENUMERATED DATA ===")
-//                    enumeratedData.groupBy { it.sfi }.forEach { (sfi, records) ->
-//                        Log.d(TAG, "SFI $sfi has ${records.size} records:")
-//                        records.forEach { rec ->
-//                            Log.d(TAG, "  Record ${rec.record}: ${rec.data.size} bytes")
-//                            // Print first 50 bytes in hex
-//                            val hex = rec.data.take(50).joinToString(" ") { "%02X".format(it) }
-//                            Log.d(TAG, "    HEX: $hex")
-//                            // Print first 50 bytes as ASCII (readable characters only)
-//                            val ascii = rec.data.take(50).map {
-//                                if (it in 32..126) it.toInt().toChar() else '.'
-//                            }.joinToString("")
-//                            Log.d(TAG, "    ASCII: $ascii")
-////                            val first20 = rec.data.take(20).joinToString(" ") { "%02X".format(it) }
-////                            Log.d(TAG, "  Record ${rec.record}: ${rec.data.size} bytes, starts with: $first20, isImage: ${isImageData(rec.data)}")
-////                        }
-//                        }
-//                    }
-//                    Log.d(TAG, "=== END DEBUG ===")
-
                     val parsed = parseEnumeratedData(enumeratedData)
-
                     cardId = parsed["cardId"] ?: parsed["documentNumber"]
                     holderName = parsed["name"]
                     firstName = parsed["firstName"]
                     additionalInfo.putAll(parsed)
 
                     faceImage = extractFaceImage(enumeratedData)
+                    fingerprintData.addAll(extractFingerprints(enumeratedData))
 
                     if (faceImage != null) {
-                        Log.d(TAG, " Face image extracted and verified (${faceImage.size} bytes)")
+                        Log.d(TAG, "Face image extracted (${faceImage.size} bytes)")
+                    }
+
+                    if (fingerprintData.isNotEmpty()) {
+                        Log.d(TAG, "Extracted ${fingerprintData.size} fingerprint(s)")
                     } else {
-                        Log.e(TAG, " Failed to extract valid face image")
+                        Log.w(TAG, "No fingerprint data found")
                     }
 
                     Log.d(TAG, "Card data successfully read from Telpo device")
@@ -245,12 +246,8 @@ class SAMCardReader {
             }
 
             return@withContext SecureCardData(
-                cardId,
-                holderName,
-                firstName,
-                faceImage,
-                additionalInfo,
-                isAuthenticated
+                cardId, holderName, firstName, faceImage,
+                fingerprintData, additionalInfo, isAuthenticated
             )
         }
     }
@@ -259,16 +256,12 @@ class SAMCardReader {
         val result = mutableMapOf<String, String>()
         val groupedBySfi = enumeratedData.groupBy { it.sfi }
 
-        Log.d(
-            TAG,
-            "Parsing enumerated data: ${enumeratedData.size} records, ${groupedBySfi.size} SFIs"
-        )
+        Log.d(TAG, "Parsing enumerated data: ${enumeratedData.size} records, ${groupedBySfi.size} SFIs")
 
         groupedBySfi.forEach { (sfi, records) ->
             Log.d(TAG, "Processing SFI $sfi with ${records.size} records")
             when (sfi) {
                 1 -> {
-                    // Cardholder text data
                     val firstRecord = records.firstOrNull { it.record == 1 }
                     firstRecord?.let {
                         Log.d(TAG, "Parsing cardholder data from SFI 1, record 1")
@@ -276,12 +269,18 @@ class SAMCardReader {
                     }
                 }
                 2, 3 -> {
-                    // Face image is typically in SFI 2 or 3
-                    // Look for the largest record that looks like an image
+                    // Face image handling
                     records.filter { it.data.size > 1000 && isImageData(it.data) }
                         .maxByOrNull { it.data.size }
                         ?.let { imageRecord ->
-                            Log.d(TAG, "🖼️ Found potential face image in SFI $sfi, record ${imageRecord.record}: ${imageRecord.data.size} bytes")
+                            Log.d(TAG, "Found potential face image in SFI $sfi, record ${imageRecord.record}")
+                        }
+                }
+                4, 5, 6 -> {
+                    // Fingerprint data typically in these SFIs
+                    records.filter { it.data.size > 100 }
+                        .forEach { fpRecord ->
+                            Log.d(TAG, "Potential fingerprint in SFI $sfi, record ${fpRecord.record}: ${fpRecord.data.size} bytes")
                         }
                 }
             }
@@ -289,6 +288,135 @@ class SAMCardReader {
 
         Log.d(TAG, "Parsed ${result.size} fields from card data")
         return result
+    }
+
+
+    private fun extractFingerprints(enumeratedData: List<EnumeratedData>): List<FingerprintData> {
+        val fingerprints = mutableListOf<FingerprintData>()
+
+        // Check SFI 4, 5, 6 for fingerprint data
+        val fingerprintSFIs = listOf(4, 5, 6)
+
+        fingerprintSFIs.forEach { sfi ->
+            val sfiData = enumeratedData
+                .filter { it.sfi == sfi }
+                .sortedBy { it.record }
+                .flatMap { it.data.toList() }
+                .toByteArray()
+
+            if (sfiData.isNotEmpty()) {
+                // Try to extract fingerprint template
+                val template = extractFingerprintTemplate(sfiData)
+                if (template != null) {
+                    val format = detectFingerprintFormat(template)
+                    fingerprints.add(FingerprintData(
+                        template = template,
+                        fingerIndex = sfi - 3, // Map SFI to finger index
+                        format = format
+                    ))
+                    Log.d(TAG, "Extracted fingerprint from SFI $sfi (${template.size} bytes, format: $format)")
+                }
+            }
+        }
+
+        return fingerprints
+    }
+
+
+    private fun extractFingerprintTemplate(data: ByteArray): ByteArray? {
+        if (data.size < 20) return null
+
+        // Method 1: Look for ISO/IEC 19794-2 format (starts with "FMR")
+        val isoTemplate = extractISOFingerprint(data)
+        if (isoTemplate != null) return isoTemplate
+
+        // Method 2: Look for ANSI 378 format
+        val ansiTemplate = extractANSIFingerprint(data)
+        if (ansiTemplate != null) return ansiTemplate
+
+        // Method 3: Look for WSQ compressed format
+        val wsqTemplate = extractWSQFingerprint(data)
+        if (wsqTemplate != null) return wsqTemplate
+
+        // Method 4: Raw template (just return if size is reasonable)
+        if (data.size in 100..10000) {
+            Log.d(TAG, "Extracted raw fingerprint template (${data.size} bytes)")
+            return data
+        }
+
+        return null
+    }
+
+
+    private fun extractISOFingerprint(data: ByteArray): ByteArray? {
+        // ISO template starts with "FMR\0" or specific header bytes
+        val fmrHeader = byteArrayOf(0x46, 0x4D, 0x52, 0x00) // "FMR\0"
+        val start = data.indexOfSequence(fmrHeader)
+
+        if (start != -1) {
+            // ISO templates are typically 300-2000 bytes
+            val end = minOf(start + 2000, data.size)
+            return data.copyOfRange(start, end)
+        }
+
+        // Alternative: Check for ISO header pattern (0x464D5200 or similar)
+        if (data.size >= 4 &&
+            data[0] == 0x46.toByte() &&
+            data[1] == 0x4D.toByte() &&
+            data[2] == 0x52.toByte()) {
+            return data.copyOf()
+        }
+
+        return null
+    }
+
+
+    private fun extractANSIFingerprint(data: ByteArray): ByteArray? {
+        // ANSI 378 has specific header: Version, Image Size, etc.
+        // Typically starts with 0x41, 0x4E (AN) or version bytes
+        if (data.size >= 26) { // Minimum ANSI template size
+            // Check for ANSI-like structure
+            if ((data[0] == 0x00.toByte() || data[0] == 0x01.toByte()) &&
+                data.size in 100..5000) {
+                return data.copyOf()
+            }
+        }
+        return null
+    }
+
+
+    private fun extractWSQFingerprint(data: ByteArray): ByteArray? {
+        // WSQ compressed images start with specific markers
+        // Typically 0xFF, 0xA0 (SOI marker for WSQ)
+        if (data.size >= 2 &&
+            data[0] == 0xFF.toByte() &&
+            data[1] == 0xA0.toByte()) {
+            return data.copyOf()
+        }
+        return null
+    }
+
+
+    private fun detectFingerprintFormat(template: ByteArray): String {
+        if (template.size < 4) return "UNKNOWN"
+
+        return when {
+            // ISO/IEC 19794-2
+            template[0] == 0x46.toByte() &&
+                    template[1] == 0x4D.toByte() &&
+                    template[2] == 0x52.toByte() -> "ISO_19794_2"
+
+            // WSQ
+            template[0] == 0xFF.toByte() &&
+                    template[1] == 0xA0.toByte() -> "WSQ"
+
+            // ANSI 378
+            template.size in 100..5000 &&
+                    (template[0] == 0x00.toByte() || template[0] == 0x01.toByte()) -> "ANSI_378"
+
+            // Raw/Unknown
+            else -> "RAW"
+        }
     }
 
     private fun parseCardHolderData(data: ByteArray): Map<String, String> {
@@ -314,7 +442,6 @@ class SAMCardReader {
 
                 val strVal = String(value, Charsets.UTF_8).trim().replace("\u0000", "")
 
-                // FIXED TAG MAPPING - This is the key change!
                 val fieldName = when (tag) {
                     0x01 -> "firstName"
                     0x02 -> "surname"
@@ -339,7 +466,6 @@ class SAMCardReader {
             }
         }
 
-        // Derived/computed fields
         val fullName = listOfNotNull(result["surname"], result["firstName"], result["middleName"])
             .joinToString(" ")
             .trim()
@@ -361,17 +487,14 @@ class SAMCardReader {
         return try {
             Log.d(TAG, "Starting SAM authentication for government ID card with key index $keyIndex")
 
-            // Method 1: Try reading without authentication first
-            Log.d(TAG, "Method 1: Attempting to read without authentication...")
             val filesFound = enumerateAndReadFiles(transceive, enumeratedData)
 
             if (filesFound && enumeratedData.isNotEmpty()) {
-                Log.d(TAG, " Successfully read ${enumeratedData.size} records without authentication")
+                Log.d(TAG, "Successfully read ${enumeratedData.size} records without authentication")
                 return true
             }
 
-            // Add other authentication methods if needed...
-            Log.e(TAG, " All authentication methods failed")
+            Log.e(TAG, "All authentication methods failed")
             false
         } catch (e: Exception) {
             Log.e(TAG, "SAM authentication error: ${e.message}", e)
@@ -385,7 +508,8 @@ class SAMCardReader {
     ): Boolean {
         var foundAny = false
 
-        val targetSFIs = listOf(1, 2, 3, 4, 5)
+        // Extended SFI range to include fingerprint data (4-6)
+        val targetSFIs = listOf(1, 2, 3, 4, 5, 6)
         for (sfi in targetSFIs) {
             var consecutiveFailures = 0
             val sfiRecords = mutableListOf<ByteArray>()
@@ -393,7 +517,7 @@ class SAMCardReader {
             for (record in 1..20) {
                 try {
                     val command = byteArrayOf(
-                        0x00.toByte(), 0xB2.toByte(), // READ RECORD
+                        0x00.toByte(), 0xB2.toByte(),
                         record.toByte(),
                         ((sfi shl 3) or 0x04).toByte(),
                         0x00.toByte()
@@ -408,36 +532,31 @@ class SAMCardReader {
                         sfiRecords.add(data)
                         foundAny = true
                         consecutiveFailures = 0
-//                        Log.d(TAG, " Read SFI $sfi, record $record: ${data.size} bytes")
                     } else if (sw == SW_RECORD_NOT_FOUND || sw == SW_FILE_NOT_FOUND) {
                         consecutiveFailures++
                         if (consecutiveFailures >= 3) {
-                            Log.d(TAG, " SFI $sfi: 3 consecutive failures, moving to next SFI")
+                            Log.d(TAG, "SFI $sfi: 3 consecutive failures, moving to next SFI")
                             break
                         }
                     } else {
                         consecutiveFailures++
-                        Log.d(TAG, "SFI $sfi, record $record returned SW: 0x${sw.toString(16)}")
                         if (consecutiveFailures >= 3) break
                     }
                 } catch (e: Exception) {
                     consecutiveFailures++
-                    Log.d(TAG, "Exception reading SFI $sfi, record $record: ${e.message}")
                     if (consecutiveFailures >= 3) break
                 }
             }
 
             if (sfiRecords.isNotEmpty()) {
-                Log.d(TAG, " SFI $sfi: Read ${sfiRecords.size} records successfully")
+                Log.d(TAG, "SFI $sfi: Read ${sfiRecords.size} records successfully")
             }
-
         }
 
         return foundAny
     }
 
     private fun extractFaceImage(enumeratedData: List<EnumeratedData>): ByteArray? {
-
         val sfi2Data = enumeratedData
             .filter { it.sfi == 2 }
             .sortedBy { it.record }
@@ -447,12 +566,11 @@ class SAMCardReader {
         if (sfi2Data.isNotEmpty()) {
             val jpegImage = extractJPEG(sfi2Data)
             if (jpegImage != null) {
-                Log.d(TAG, "✅ Extracted JPEG from SFI 2 (${jpegImage.size} bytes)")
+                Log.d(TAG, "Extracted JPEG from SFI 2 (${jpegImage.size} bytes)")
                 return jpegImage
             }
         }
 
-        // Try SFI 3 as fallback (GIF zone)
         val sfi3Data = enumeratedData
             .filter { it.sfi == 3 }
             .sortedBy { it.record }
@@ -460,14 +578,12 @@ class SAMCardReader {
             .toByteArray()
 
         if (sfi3Data.isNotEmpty()) {
-            // Try JPEG first in SFI 3
             val jpegImage = extractJPEG(sfi3Data)
             if (jpegImage != null) {
-                Log.d(TAG, "✅ Extracted JPEG from SFI 3 (${jpegImage.size} bytes)")
+                Log.d(TAG, "Extracted JPEG from SFI 3 (${jpegImage.size} bytes)")
                 return jpegImage
             }
 
-            // Try GIF
             val gifImage = extractGIF(sfi3Data)
             if (gifImage != null) {
                 Log.d(TAG, "Extracted GIF from SFI 3 (${gifImage.size} bytes)")
@@ -475,13 +591,13 @@ class SAMCardReader {
             }
         }
 
-        Log.e(TAG, " No valid image found in SFI 2 or 3")
+        Log.e(TAG, "No valid image found in SFI 2 or 3")
         return null
     }
 
     private fun extractJPEG(data: ByteArray): ByteArray? {
-        val start = data.indexOfSequence(byteArrayOf(0xFF.toByte(), 0xD8.toByte())) // SOI
-        val end = data.indexOfSequence(byteArrayOf(0xFF.toByte(), 0xD9.toByte()))   // EOI
+        val start = data.indexOfSequence(byteArrayOf(0xFF.toByte(), 0xD8.toByte()))
+        val end = data.indexOfSequence(byteArrayOf(0xFF.toByte(), 0xD9.toByte()))
 
         return if (start != -1 && end != -1 && end > start) {
             data.copyOfRange(start, end + 2)
@@ -490,12 +606,13 @@ class SAMCardReader {
 
     private fun extractGIF(data: ByteArray): ByteArray? {
         val start = data.indexOfSequence("GIF89a".toByteArray())
-        val end = data.indexOfSequence(byteArrayOf(0x00, 0x3B)) // GIF trailer
+        val end = data.indexOfSequence(byteArrayOf(0x00, 0x3B))
 
         return if (start != -1 && end != -1 && end > start) {
             data.copyOfRange(start, end + 2)
         } else null
     }
+
     private fun ByteArray.indexOfSequence(seq: ByteArray): Int {
         outer@ for (i in indices) {
             if (i + seq.size > size) break
@@ -506,7 +623,6 @@ class SAMCardReader {
         }
         return -1
     }
-
 
     private fun selectSAMApplication(isoDep: IsoDep, aidHex: String): Boolean =
         selectSAMApplicationWithFn({ cmd -> isoDep.transceive(cmd) }, aidHex)
@@ -532,60 +648,33 @@ class SAMCardReader {
         }
     }
 
-    private fun combineRecords(records: List<ByteArray>): ByteArray {
-        val totalSize = records.sumOf { it.size }
-        val result = ByteArray(totalSize)
-        var offset = 0
-        for (r in records) {
-            r.copyInto(result, offset)
-            offset += r.size
-        }
-        return result
-    }
-
     private fun getStatusWord(response: ByteArray): Int =
         if (response.size < 2) 0 else
-            ((response[response.size - 2].toInt() and 0xFF) shl 8) or (response[response.size - 1].toInt() and 0xFF)
+            ((response[response.size - 2].toInt() and 0xFF) shl 8) or
+                    (response[response.size - 1].toInt() and 0xFF)
 
     private fun isSuccessResponse(response: ByteArray) = getStatusWord(response) == SW_SUCCESS
 
     private fun isImageData(data: ByteArray): Boolean {
         if (data.size < 4) return false
 
-        // Check if starts with image signature
         val startsWithImage = when {
             data[0] == 0xFF.toByte() && data[1] == 0xD8.toByte() && data[2] == 0xFF.toByte() -> true
-            data[0] == 0x89.toByte() && data[1] == 0x50.toByte() && data[2] == 0x4E.toByte() && data[3] == 0x47.toByte() -> true
+            data[0] == 0x89.toByte() && data[1] == 0x50.toByte() &&
+                    data[2] == 0x4E.toByte() && data[3] == 0x47.toByte() -> true
             else -> false
         }
 
         if (startsWithImage) return true
 
-        // NEW: Check if image signature exists ANYWHERE in first 100 bytes (wrapped in TLV)
         val searchRange = minOf(data.size, 100)
         for (i in 0 until searchRange - 2) {
-            if (data[i] == 0xFF.toByte() && data[i + 1] == 0xD8.toByte() && data[i + 2] == 0xFF.toByte()) {
-                Log.d(TAG, "Found JPEG signature at offset $i (wrapped)")
+            if (data[i] == 0xFF.toByte() && data[i + 1] == 0xD8.toByte() &&
+                data[i + 2] == 0xFF.toByte()) {
                 return true
             }
         }
 
-        return false
-    }
-
-    private fun ByteArray.containsSequence(sequence: ByteArray): Boolean {
-        if (sequence.isEmpty() || this.size < sequence.size) return false
-
-        for (i in 0..this.size - sequence.size) {
-            var found = true
-            for (j in sequence.indices) {
-                if (this[i + j] != sequence[j]) {
-                    found = false
-                    break
-                }
-            }
-            if (found) return true
-        }
         return false
     }
 

@@ -32,21 +32,29 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.common.apiutil.nfc.Nfc
 import com.example.common.FaceMatchResult
 import com.example.face_verification_app.data.CardVerificationResponse
 import com.example.face_verification_app.ui.CardDetailsScreen
+import com.example.face_verification_app.ui.CardReadDialog
 import com.example.face_verification_app.ui.CardVerificationDialog
 import com.example.face_verification_app.ui.FaceVerificationResultScreen
 import com.example.face_verification_app.ui.MainMenuScreen
 import com.example.face_verification_app.ui.SplashScreen
 import com.example.face_verification_app.ui.theme.Face_Verification_AppTheme
+import com.example.neurotecsdklibrary.EnrollFaceViewModel
+import com.example.neurotecsdklibrary.FaceDetectionFeedback
+import com.example.neurotecsdklibrary.FingerprintMatchResult
+import com.example.neurotecsdklibrary.FingerprintVerificationViewModel
 import com.example.neurotecsdklibrary.NeurotecFaceManager
 import com.example.neurotecsdklibrary.NeurotecLicenseHelper
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -76,6 +84,11 @@ class MainActivity : ComponentActivity() {
     private var pendingIntent: PendingIntent? = null
     private var intentFiltersArray: Array<IntentFilter>? = null
     private var techListsArray: Array<Array<String>>? = null
+
+    // Card reading dialog
+    private var showCardReadDialog by mutableStateOf(false)
+    private var cardReadSuccess by mutableStateOf(false)
+    private var cardReadMessage by mutableStateOf("")
 
     // Card reader instances
     private val samCardReader = SAMCardReader()
@@ -200,6 +213,7 @@ class MainActivity : ComponentActivity() {
                             CardDetailsScreen(
                                 cardData = pendingCardData,
                                 onBackClick = {
+                                    resetCardState()
                                     currentScreen = Screen.MAIN_MENU
                                     isMainMenuActive = true
                                     cardReadingEnabled = true
@@ -231,7 +245,8 @@ class MainActivity : ComponentActivity() {
                                     currentScreen = Screen.FACE_VERIFICATION
                                 },
                                 onBackToMainMenu = {
-                                    resetVerificationState()
+                                    resetCardState()
+//                                    resetVerificationState()
                                     currentScreen = Screen.MAIN_MENU
                                     isMainMenuActive = true
                                     cardReadingEnabled = true
@@ -270,7 +285,8 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onCancel = {
                                     // Reset state when going back to main menu
-                                    resetVerificationState()
+                                    resetCardState()
+//                                    resetVerificationState()
                                     currentScreen = Screen.MAIN_MENU
                                     isMainMenuActive = true
                                     cardReadingEnabled = true
@@ -296,6 +312,36 @@ class MainActivity : ComponentActivity() {
                                 showVerificationDialog = false
                                 verificationResponse = null
                                 verificationCardId = ""
+                            }
+                        )
+                    }
+
+                    // Show card read dialog
+                    if (showCardReadDialog) {
+                        CardReadDialog(
+                            success = cardReadSuccess,
+                            message = cardReadMessage,
+                            onDismiss = {
+                                showCardReadDialog = false
+                                if (cardReadSuccess) {
+                                    // Proceed to face verification
+                                    if (checkCameraPermission()) {
+                                        currentScreen = Screen.CAMERA_CAPTURE
+                                        isFaceVerificationActive = true
+                                    } else {
+                                        currentScreen = Screen.MAIN_MENU
+                                        isMainMenuActive = true
+                                        cardReadingEnabled = true
+                                        telpoT20DataSource.resume()
+                                    }
+                                } else {
+                                    // Stay on main menu for failures
+                                    resetCardState()
+                                    currentScreen = Screen.MAIN_MENU
+                                    isMainMenuActive = true
+                                    cardReadingEnabled = true
+                                    telpoT20DataSource.resume()
+                                }
                             }
                         )
                     }
@@ -390,19 +436,17 @@ class MainActivity : ComponentActivity() {
         // Prevent concurrent reads
         if (readingJob?.isActive == true) {
             Log.d(TAG, "Already processing a card, ignoring")
+            cardReadingEnabled = true  // Re-enable if already processing
             return
         }
 
+        resetCardState()
+
         showFaceVerificationDialog = true
-
-//        val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
-//        toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
-
         cardTapPlayer?.start()
 
         readingJob = lifecycleScope.launch {
             try {
-
                 Log.d(TAG, "Starting SAM card read...")
 
                 val secureCardData = withContext(Dispatchers.IO) {
@@ -417,48 +461,234 @@ class MainActivity : ComponentActivity() {
                 Log.d(TAG, "SAM card read complete")
 
                 if (!secureCardData.isAuthenticated) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        " Authentication failed! Check SAM Password",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    cardReadSuccess = false
+                    cardReadMessage = "Authentication failed! Check SAM Password"
+                    showCardReadDialog = true
+                    cardReadingEnabled = true
                     return@launch
                 }
 
+                // Check if face image was read successfully
+                if (secureCardData.faceImage == null || secureCardData.faceImage.isEmpty()) {
+                    cardReadSuccess = false
+                    cardReadMessage = "Card not read, please keep the card on reader for 2 seconds"
+                    showCardReadDialog = true
+                    cardReadingEnabled = true
+                    return@launch
+                }
 
                 pendingCardData = secureCardData
                 lastScannedCardId = secureCardData.cardId
                 nfcFaceImage = secureCardData.faceImage
 
                 isMainMenuActive = false
-//                currentScreen = Screen.CARD_DETAILS
 
-                // Skip card details screen and go directly to face capture
-                if (checkCameraPermission()) {
-                    currentScreen = Screen.CAMERA_CAPTURE
-                    isFaceVerificationActive = true
-                } else {
-                    // If permission is denied, stay on the main menu
-                    currentScreen = Screen.MAIN_MENU
-                    isMainMenuActive = true
-                    cardReadingEnabled = true
-                }
-
+                // Show success dialog
+                cardReadSuccess = true
+                cardReadMessage = "Card read successfully, ready for face verification"
+                showCardReadDialog = true
 
             } catch (e: Exception) {
                 showFaceVerificationDialog = false
                 Log.e(TAG, "Error reading Telpo card", e)
-                Toast.makeText(
-                    this@MainActivity,
-                    "Error reading card: ${e.message}",
-                    Toast.LENGTH_LONG
-                ).show()
+                cardReadSuccess = false
+                cardReadMessage = "Error reading card: ${e.message}"
+                showCardReadDialog = true
+                cardReadingEnabled = true
 
             } finally {
                 readingJob = null
             }
         }
     }
+
+
+//    private fun handleTelpoCard(nfc: Nfc) {
+//        // Prevent concurrent reads
+//        if (readingJob?.isActive == true) {
+//            Log.d(TAG, "Already processing a card, ignoring")
+//            cardReadingEnabled = true  // Re-enable if already processing
+//            return
+//        }
+//
+//        resetCardState()
+//
+//        showFaceVerificationDialog = true
+//        cardTapPlayer?.start()
+//
+//        readingJob = lifecycleScope.launch {
+//            try {
+//                Log.d(TAG, "Starting SAM card read...")
+//
+//                val secureCardData = withContext(Dispatchers.IO) {
+//                    samCardReader.readSecureCardData(
+//                        nfcDevice = nfc,
+//                        samPassword = getSAMPassword(),
+//                        samKeyIndex = 0x01
+//                    )
+//                }
+//
+//                showFaceVerificationDialog = false
+//                Log.d(TAG, "SAM card read complete")
+//
+//                if (!secureCardData.isAuthenticated) {
+//                    cardReadSuccess = false
+//                    showCardReadDialog = true
+//                    Toast.makeText(
+//                        this@MainActivity,
+//                        "Authentication failed! Check SAM Password",
+//                        Toast.LENGTH_LONG
+//                    ).show()
+//                    cardReadingEnabled = true
+//                    return@launch
+//                }
+//
+//                // Check if face image was read successfully
+//                if (secureCardData.faceImage == null || secureCardData.faceImage.isEmpty()) {
+//                    cardReadSuccess = false
+//                    cardReadMessage = "Card not read, please keep the card on reader for 2 seconds"
+//                    showCardReadDialog = true
+//                    cardReadingEnabled = true
+//                    return@launch
+//                }
+//
+////                // Check if face image was read successfully
+////                if (secureCardData.faceImage == null || secureCardData.faceImage.isEmpty()) {
+////                    Toast.makeText(
+////                        this@MainActivity,
+////                        "Face not read, please keep the card on reader for 2 seconds",
+////                        Toast.LENGTH_LONG
+////                    ).show()
+////                    cardReadingEnabled = true
+////                    return@launch
+////                }
+//
+//                pendingCardData = secureCardData
+//                lastScannedCardId = secureCardData.cardId
+//                nfcFaceImage = secureCardData.faceImage
+//
+//                isMainMenuActive = false
+//
+//                // Show success dialog
+//                cardReadSuccess = true
+//                cardReadMessage = "Card read successfully, ready for face verification"
+//                showCardReadDialog = true
+//
+//                // Show success message before proceeding
+////                Toast.makeText(
+////                    this@MainActivity,
+////                    "Card Read, ready for face verification",
+////                    Toast.LENGTH_SHORT
+////                ).show()
+//
+//                // Small delay to let user see the message
+////                delay(800)
+//
+//                // Skip card details screen and go directly to face capture
+////                if (checkCameraPermission()) {
+////                    currentScreen = Screen.CAMERA_CAPTURE
+////                    isFaceVerificationActive = true
+////                } else {
+////                    // If permission is denied, stay on the main menu
+////                    currentScreen = Screen.MAIN_MENU
+////                    isMainMenuActive = true
+////                    cardReadingEnabled = true
+////                }
+//
+//            } catch (e: Exception) {
+//                showFaceVerificationDialog = false
+//                Log.e(TAG, "Error reading Telpo card", e)
+//                Toast.makeText(
+//                    this@MainActivity,
+//                    "Error reading card: ${e.message}",
+//                    Toast.LENGTH_LONG
+//                ).show()
+//                cardReadingEnabled = true
+//
+//            } finally {
+//                readingJob = null
+//            }
+//        }
+//    }
+
+
+//    private fun handleTelpoCard(nfc: Nfc) {
+//        // Prevent concurrent reads
+//        if (readingJob?.isActive == true) {
+//            Log.d(TAG, "Already processing a card, ignoring")
+//            return
+//        }
+//
+//        resetCardState()
+//
+//        showFaceVerificationDialog = true
+//
+////        val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
+////        toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+//
+//        cardTapPlayer?.start()
+//
+//        readingJob = lifecycleScope.launch {
+//            try {
+//
+//                Log.d(TAG, "Starting SAM card read...")
+//
+//                val secureCardData = withContext(Dispatchers.IO) {
+//                    samCardReader.readSecureCardData(
+//                        nfcDevice = nfc,
+//                        samPassword = getSAMPassword(),
+//                        samKeyIndex = 0x01
+//                    )
+//                }
+//
+//                showFaceVerificationDialog = false
+//                Log.d(TAG, "SAM card read complete")
+//
+//                if (!secureCardData.isAuthenticated) {
+//                    Toast.makeText(
+//                        this@MainActivity,
+//                        " Authentication failed! Check SAM Password",
+//                        Toast.LENGTH_LONG
+//                    ).show()
+//                    return@launch
+//                }
+//
+//
+//                pendingCardData = secureCardData
+//                lastScannedCardId = secureCardData.cardId
+//                nfcFaceImage = secureCardData.faceImage
+//
+//                isMainMenuActive = false
+////                currentScreen = Screen.CARD_DETAILS
+//
+//                // Skip card details screen and go directly to face capture
+//                if (checkCameraPermission()) {
+//                    currentScreen = Screen.CAMERA_CAPTURE
+//                    isFaceVerificationActive = true
+//                } else {
+//                    // If permission is denied, stay on the main menu
+//                    currentScreen = Screen.MAIN_MENU
+//                    isMainMenuActive = true
+//                    cardReadingEnabled = true
+//                }
+//
+//
+//            } catch (e: Exception) {
+//                showFaceVerificationDialog = false
+//                Log.e(TAG, "Error reading Telpo card", e)
+//                Toast.makeText(
+//                    this@MainActivity,
+//                    "Error reading card: ${e.message}",
+//                    Toast.LENGTH_LONG
+//                ).show()
+//
+//            } finally {
+//                readingJob = null
+//            }
+//        }
+//    }
+
+
 
     private fun completeFaceVerification() {
         lifecycleScope.launch {
@@ -474,7 +704,6 @@ class MainActivity : ComponentActivity() {
             }
 
             try {
-                // Call API to verify card with face match
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
                         this@MainActivity,
@@ -482,6 +711,12 @@ class MainActivity : ComponentActivity() {
                         Toast.LENGTH_SHORT
                     ).show()
                 }
+
+//                resetCardState()
+//                currentScreen = Screen.MAIN_MENU
+//                isMainMenuActive = true
+//                cardReadingEnabled = true
+//                telpoT20DataSource.resume()
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error completing verification", e)
@@ -496,6 +731,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun resetCardState() {
+        pendingCardData = null
+        lastScannedCardId = null
+        nfcFaceImage = null
+        capturedFaceBitmap = null
+        nfcFaceBitmap = null
+        faceMatchResult = null
+    }
+
     override fun onResume() {
         super.onResume()
         nfcAdapter?.enableForegroundDispatch(this,
@@ -504,6 +748,7 @@ class MainActivity : ComponentActivity() {
             techListsArray
         )
         if (isMainMenuActive) {
+            cardReadingEnabled = true
             telpoT20DataSource.resume()
         }
     }
@@ -539,4 +784,3 @@ class MainActivity : ComponentActivity() {
     }
 
 }
-

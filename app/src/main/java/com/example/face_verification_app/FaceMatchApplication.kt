@@ -1,6 +1,5 @@
 package com.example.face_verification_app
 
-import android.annotation.SuppressLint
 import android.app.Application
 import android.util.Log
 import com.example.neurotecsdklibrary.NeurotecLicenseHelper
@@ -12,7 +11,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @HiltAndroidApp
 class FaceMatchApplication : Application() {
@@ -37,29 +35,23 @@ class FaceMatchApplication : Application() {
         }
 
         try {
-            NCore.setContext(this)
+            NCore.setContext(this@FaceMatchApplication)
             NDataFileManager.getInstance().addFromDirectory("data", false)
         }catch (e: Exception){
             Log.e(TAG, "Failed to set NCore context", e)
         }
 
         try {
-//                try {
-//                    NDataFileManager.getInstance().addFromDirectory("data", false)
-//                    Log.d(TAG, "Neurotec model files added")
-//                } catch (ex: Exception) {
-//                    Log.e(TAG, "Failed to add data files", ex)
-//                }
-
-        areLicensesActivated = NeurotecLicenseHelper.obtain(this)
-        if (areLicensesActivated) {
-            Log.d(TAG, " Licenses activated successfully")
-        } else {
-            Log.e(TAG, " License activation FAILED")
-        }
+            areLicensesActivated = NeurotecLicenseHelper.obtain(this@FaceMatchApplication)
+            if (areLicensesActivated) {
+                Log.d(TAG, " Licenses activated successfully")
+            } else {
+                Log.e(TAG, " License activation FAILED")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error doing background Neurotec initialization", e)
         }
+
 
     }
 

@@ -35,7 +35,6 @@ import kotlinx.coroutines.withContext
 import java.util.EnumSet
 import java.util.concurrent.Executors
 
-
 data class FaceDetectionFeedback(
     val lightingStatus: LightingStatus = LightingStatus.UNKNOWN,
     val distanceStatus: DistanceStatus = DistanceStatus.UNKNOWN,

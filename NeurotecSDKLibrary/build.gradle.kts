@@ -62,12 +62,13 @@ android {
 
 dependencies {
 
-    api(fileTree(mapOf(
-        "dir" to "libs",
-        "include" to listOf("*.jar", "*.aar")
-    )))
+//    api(fileTree(mapOf(
+//        "dir" to "libs",
+//        "include" to listOf("*.jar", "*.aar")
+//    )))
 
-    implementation(fileTree(mapOf("dir" to "../libs", "include" to listOf("*.aar", "*.jar"))))
+    api(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
+    implementation(project(":TelpoLib"))
 
     implementation(project(":common"))
 

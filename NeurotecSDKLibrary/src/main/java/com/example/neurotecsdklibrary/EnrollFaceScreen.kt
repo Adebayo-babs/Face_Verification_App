@@ -1,8 +1,6 @@
 package com.example.neurotecsdklibrary
 
-import android.content.Context
-import android.hardware.camera2.CameraCharacteristics
-import android.hardware.camera2.CameraManager
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
@@ -136,105 +135,105 @@ fun EnrollFaceScreen(
                     )
                 }
 
-                // Real-time Feedback Overlay - Now at bottom
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.Bottom
-                ) {
-                    // Main instruction card
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = Color.Black.copy(alpha = 0.85f)
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp)
-                        ) {
-                            Text(
-                                text = feedback.overallMessage,
-                                modifier = Modifier.fillMaxWidth(),
-                                color = Color.White,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center
-                            )
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            // Individual feedback items in a compact grid
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                // Lighting feedback
-                                CompactFeedbackItem(
-                                    label = "Light",
-                                    status = when (feedback.lightingStatus) {
-                                        LightingStatus.GOOD -> "✓"
-                                        LightingStatus.TOO_DARK -> "Dark"
-                                        LightingStatus.TOO_BRIGHT -> "Bright"
-                                        LightingStatus.UNKNOWN -> "..."
-                                    },
-                                    isGood = feedback.lightingStatus == LightingStatus.GOOD,
-                                    isUnknown = feedback.lightingStatus == LightingStatus.UNKNOWN,
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                // Distance feedback
-                                CompactFeedbackItem(
-                                    label = "Distance",
-                                    status = when (feedback.distanceStatus) {
-                                        DistanceStatus.GOOD -> "✓"
-                                        DistanceStatus.TOO_FAR -> "Far"
-                                        DistanceStatus.TOO_CLOSE -> "Close"
-                                        DistanceStatus.UNKNOWN -> "..."
-                                    },
-                                    isGood = feedback.distanceStatus == DistanceStatus.GOOD,
-                                    isUnknown = feedback.distanceStatus == DistanceStatus.UNKNOWN,
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                // Position feedback
-                                CompactFeedbackItem(
-                                    label = "Position",
-                                    status = when (feedback.positionStatus) {
-                                        PositionStatus.CENTERED -> "✓"
-                                        PositionStatus.MOVE_LEFT -> "←"
-                                        PositionStatus.MOVE_RIGHT -> "→"
-                                        PositionStatus.MOVE_UP -> "↑"
-                                        PositionStatus.MOVE_DOWN -> "↓"
-                                        PositionStatus.UNKNOWN -> "..."
-                                    },
-                                    isGood = feedback.positionStatus == PositionStatus.CENTERED,
-                                    isUnknown = feedback.positionStatus == PositionStatus.UNKNOWN,
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                // Quality feedback
-                                CompactFeedbackItem(
-                                    label = "Quality",
-                                    status = when (feedback.qualityStatus) {
-                                        QualityStatus.EXCELLENT -> "✓✓"
-                                        QualityStatus.GOOD -> "✓"
-                                        QualityStatus.FAIR -> "Fair"
-                                        QualityStatus.POOR -> "Poor"
-                                        QualityStatus.UNKNOWN -> "..."
-                                    },
-                                    isGood = feedback.qualityStatus == QualityStatus.EXCELLENT ||
-                                            feedback.qualityStatus == QualityStatus.GOOD,
-                                    isUnknown = feedback.qualityStatus == QualityStatus.UNKNOWN,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                    }
-                }
+//                // Real-time Feedback Overlay - Now at bottom
+//                Column(
+//                    modifier = Modifier
+//                        .fillMaxSize()
+//                        .padding(16.dp),
+//                    verticalArrangement = Arrangement.Bottom
+//                ) {
+//                    // Main instruction card
+//                    Card(
+//                        modifier = Modifier.fillMaxWidth(),
+//                        colors = CardDefaults.cardColors(
+//                            containerColor = Color.Black.copy(alpha = 0.85f)
+//                        ),
+//                        shape = RoundedCornerShape(12.dp)
+//                    ) {
+//                        Column(
+//                            modifier = Modifier
+//                                .fillMaxWidth()
+//                                .padding(12.dp)
+//                        ) {
+//                            Text(
+//                                text = feedback.overallMessage,
+//                                modifier = Modifier.fillMaxWidth(),
+//                                color = Color.White,
+//                                fontSize = 14.sp,
+//                                fontWeight = FontWeight.Bold,
+//                                textAlign = TextAlign.Center
+//                            )
+//
+//                            Spacer(modifier = Modifier.height(12.dp))
+//
+//                            // Individual feedback items in a compact grid
+//                            Row(
+//                                modifier = Modifier.fillMaxWidth(),
+//                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+//                            ) {
+//                                // Lighting feedback
+//                                CompactFeedbackItem(
+//                                    label = "Light",
+//                                    status = when (feedback.lightingStatus) {
+//                                        LightingStatus.GOOD -> "✓"
+//                                        LightingStatus.TOO_DARK -> "Dark"
+//                                        LightingStatus.TOO_BRIGHT -> "Bright"
+//                                        LightingStatus.UNKNOWN -> "..."
+//                                    },
+//                                    isGood = feedback.lightingStatus == LightingStatus.GOOD,
+//                                    isUnknown = feedback.lightingStatus == LightingStatus.UNKNOWN,
+//                                    modifier = Modifier.weight(1f)
+//                                )
+//
+//                                // Distance feedback
+//                                CompactFeedbackItem(
+//                                    label = "Distance",
+//                                    status = when (feedback.distanceStatus) {
+//                                        DistanceStatus.GOOD -> "✓"
+//                                        DistanceStatus.TOO_FAR -> "Far"
+//                                        DistanceStatus.TOO_CLOSE -> "Close"
+//                                        DistanceStatus.UNKNOWN -> "..."
+//                                    },
+//                                    isGood = feedback.distanceStatus == DistanceStatus.GOOD,
+//                                    isUnknown = feedback.distanceStatus == DistanceStatus.UNKNOWN,
+//                                    modifier = Modifier.weight(1f)
+//                                )
+//
+//                                // Position feedback
+//                                CompactFeedbackItem(
+//                                    label = "Position",
+//                                    status = when (feedback.positionStatus) {
+//                                        PositionStatus.CENTERED -> "✓"
+//                                        PositionStatus.MOVE_LEFT -> "←"
+//                                        PositionStatus.MOVE_RIGHT -> "→"
+//                                        PositionStatus.MOVE_UP -> "↑"
+//                                        PositionStatus.MOVE_DOWN -> "↓"
+//                                        PositionStatus.UNKNOWN -> "..."
+//                                    },
+//                                    isGood = feedback.positionStatus == PositionStatus.CENTERED,
+//                                    isUnknown = feedback.positionStatus == PositionStatus.UNKNOWN,
+//                                    modifier = Modifier.weight(1f)
+//                                )
+//
+//                                // Quality feedback
+//                                CompactFeedbackItem(
+//                                    label = "Quality",
+//                                    status = when (feedback.qualityStatus) {
+//                                        QualityStatus.EXCELLENT -> "✓✓"
+//                                        QualityStatus.GOOD -> "✓"
+//                                        QualityStatus.FAIR -> "Fair"
+//                                        QualityStatus.POOR -> "Poor"
+//                                        QualityStatus.UNKNOWN -> "..."
+//                                    },
+//                                    isGood = feedback.qualityStatus == QualityStatus.EXCELLENT ||
+//                                            feedback.qualityStatus == QualityStatus.GOOD,
+//                                    isUnknown = feedback.qualityStatus == QualityStatus.UNKNOWN,
+//                                    modifier = Modifier.weight(1f)
+//                                )
+//                            }
+//                        }
+//                    }
+//                }
             }
 
             Spacer(Modifier.height(16.dp))

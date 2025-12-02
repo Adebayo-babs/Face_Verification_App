@@ -44,7 +44,8 @@ import com.example.face_verification_app.SAMCardReader
 fun CardDetailsScreen(
     cardData: SAMCardReader.SecureCardData?,
     onBackClick: () -> Unit,
-    onVerifyFaceClick: () -> Unit
+    onVerifyFaceClick: () -> Unit,
+    onVerifyFingerprintClick: (() -> Unit)? = null
 
 ) {
 

@@ -6,10 +6,12 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.common.FaceMatchResult
 import com.example.neurotecsdklibrary.EnrollFaceScreen
 import com.example.neurotecsdklibrary.EnrollFaceViewModel
+
 
 @Composable
 fun AutoCaptureAndMatchScreen(

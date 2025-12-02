@@ -35,10 +35,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.common.CommonConstants
 import kotlinx.coroutines.delay
 
 @Composable
@@ -46,6 +48,11 @@ fun MainMenuScreen(
     isLoading: Boolean = false,
     onChangeSAMPassword: ((String) -> Unit)? = null
 ) {
+
+
+    val context = LocalContext.current
+    val commonUtil = com.common.apiutil.pos.CommonUtil(context)
+    commonUtil.setRelayPower(CommonConstants.RelayType.RELAY_1, 0)
 
     var showOptionsMenu by remember { mutableStateOf(false) }
     var showSAMPasswordDialog by remember { mutableStateOf(false) }

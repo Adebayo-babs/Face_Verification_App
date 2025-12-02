@@ -23,3 +23,5 @@ rootProject.name = "Face_Verification_App"
 include(":app")
 include( ":NeurotecSDKLibrary")
 include(":common")
+include(":TelpoSDKLibrary")
+include(":TelpoLib")

@@ -110,9 +110,10 @@ dependencies {
     // Neurotec SDK
     implementation(project(":NeurotecSDKLibrary"))
     implementation(project(":common"))
+    implementation(project(":TelpoLib"))
 
     // T20 SDK
-    implementation(fileTree(mapOf("dir" to "../libs", "include" to listOf("*.aar", "*.jar"))))
+//    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
 
     // JNA for Neurotec SDK
     implementation("net.java.dev.jna:jna:5.13.0")

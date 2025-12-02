@@ -21,6 +21,7 @@ roomCompilerVersion = "2.6.1"
 roomRuntimeVersion = "2.8.4"
 runtimeAndroid = "1.9.5"
 material3Android = "1.4.0"
+jetbrainsKotlinJvm = "2.0.0"
 
 
 [libraries]
@@ -59,4 +60,5 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "jetbrainsKotlinJvm" }
 

@@ -1,6 +1,7 @@
 package com.example.face_verification_app.ui
 
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -24,18 +25,27 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aratek.trustfinger.common.CommonUtil
+import com.common.CommonConstants
 import com.example.common.FaceMatchResult
 import com.example.face_verification_app.MainActivity
 import com.example.face_verification_app.SAMCardReader
 import com.example.neurotecsdklibrary.EnrollFaceViewModel
+import kotlinx.coroutines.delay
 
 @Composable
 fun FaceVerificationResultScreen(
@@ -48,9 +58,40 @@ fun FaceVerificationResultScreen(
     onCancel: () -> Unit
 ) {
 
+
+
     BackHandler {
         onCancel()
     }
+
+    val context = LocalContext.current
+    val commonUtil = com.common.apiutil.pos.CommonUtil(context)
+
+    // Track if relay has been activated
+    var relayActivated by remember { mutableStateOf(false) }
+
+    LaunchedEffect(matchResult?.isMatch) {
+        if (matchResult?.isMatch == true && !relayActivated) {
+
+            Log.d("FaceVerification", "Activating relay")
+
+            // Turn ON the relay
+            commonUtil.setRelayPower(CommonConstants.RelayType.RELAY_1, 1)
+            relayActivated = true
+
+            // Wait 2 seconds
+            delay(2000)
+
+            // Turn OFF the relay
+            commonUtil.setRelayPower(CommonConstants.RelayType.RELAY_1, 0)
+            relayActivated = false
+            Log.d("FaceVerification", "Relay turned off after 2 seconds")
+        }
+    }
+
+//    Log.v("Relay result", relay.toString())
+
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -171,7 +212,11 @@ fun FaceVerificationResultScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = if (matchResult.isMatch) " FACES MATCH" else " FACES DO NOT MATCH",
+                        text = if (matchResult.isMatch) {
+                            " FACES MATCH"
+                        } else {
+                            " FACES DO NOT MATCH"
+                        },
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -240,19 +285,7 @@ fun FaceVerificationResultScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (matchResult.isMatch) {
-                    Button(
-                        onClick = onConfirm,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF4CAF50)
-                        )
-                    ) {
-                        Text("✓ Confirm Verification", fontSize = 18.sp)
-                    }
-                } else {
+                if (!matchResult.isMatch) {
                     OutlinedButton(
                         onClick = onRetakePhoto,
                         modifier = Modifier
