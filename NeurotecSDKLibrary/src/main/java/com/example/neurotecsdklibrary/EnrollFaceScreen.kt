@@ -1,6 +1,8 @@
 package com.example.neurotecsdklibrary
 
 
+import android.util.Log
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -56,33 +59,32 @@ fun EnrollFaceScreen(
 
     val context = LocalContext.current
     val status = viewModel.status
-    val feedback = viewModel.detectionFeedback
 
     val commonUtil = remember { CommonUtil(context) }
-    var isFlashOn by remember { mutableStateOf(false) }
 
-    fun toggleFlashlight() {
+    // Automatically turn on flashlight when screen appears
+    LaunchedEffect(viewModel.useNeurotecCamera) {
         try {
-            if (isFlashOn) {
-                commonUtil.setColorLed(CommonConstants.LedType.FILL_LIGHT_1, CommonConstants.LedColor.WHITE_LED, 0)
-                isFlashOn = false
-            }else {
+            if (viewModel.useNeurotecCamera) {
                 commonUtil.setColorLed(CommonConstants.LedType.FILL_LIGHT_1, CommonConstants.LedColor.WHITE_LED, 255)
-                isFlashOn = true
+                Log.d("EnrollFaceScreen", "Flashlight turned ON")
+            }else {
+                commonUtil.setColorLed(CommonConstants.LedType.FILL_LIGHT_1, CommonConstants.LedColor.WHITE_LED, 0)
+                Log.d("EnrollFaceScreen", "Flashlight turned OFF")
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("EnrollFaceScreen", "Error turning on flashlight", e)
         }
     }
 
+    // Turn off flashlight when screen is disposed
     DisposableEffect(Unit) {
         onDispose {
             try {
-                if (isFlashOn) {
-                    commonUtil.setColorLed(CommonConstants.LedType.FILL_LIGHT_1, CommonConstants.LedColor.WHITE_LED, 0)
-                }
+                commonUtil.setColorLed(CommonConstants.LedType.FILL_LIGHT_1, CommonConstants.LedColor.WHITE_LED, 0)
+                Log.d("EnrollFaceScreen", "Flashlight turned OFF")
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("EnrollFaceScreen", "Error turning off flashlight", e)
             }
         }
     }
@@ -117,123 +119,68 @@ fun EnrollFaceScreen(
                     .weight(1f)
                     .background(Color(0xFF1C1C1C))
             ) {
-                SimpleCameraPreview(modifier = Modifier.fillMaxSize())
+//                SimpleCameraPreview(
+//                    modifier = Modifier.fillMaxSize(),
+//                    viewModel = viewModel
+//                )
 
-                // Flashlight toggle button - Top right
-                FloatingActionButton(
-                    onClick = { toggleFlashlight() },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp),
-                    containerColor = if (isFlashOn) Color(0xFFFFC107) else Color(0xFF424242),
-                    contentColor = Color.White
-                ) {
-                    Icon(
-                        imageVector = if (isFlashOn) Icons.Default.PlayArrow else Icons.Default.Clear,
-                        contentDescription = if (isFlashOn) "Turn off flashlight" else "Turn on flashlight",
-                        modifier = Modifier.size(24.dp)
+                if (viewModel.useNeurotecCamera) {
+                    SimpleCameraPreview(
+                        modifier = Modifier.fillMaxSize(),
+                        viewModel = viewModel
+                    )
+                } else {
+                    SimpleCameraPreviewGrayScale(
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
 
-//                // Real-time Feedback Overlay - Now at bottom
-//                Column(
-//                    modifier = Modifier
-//                        .fillMaxSize()
-//                        .padding(16.dp),
-//                    verticalArrangement = Arrangement.Bottom
-//                ) {
-//                    // Main instruction card
-//                    Card(
-//                        modifier = Modifier.fillMaxWidth(),
-//                        colors = CardDefaults.cardColors(
-//                            containerColor = Color.Black.copy(alpha = 0.85f)
-//                        ),
-//                        shape = RoundedCornerShape(12.dp)
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Camera switch button
+                    FloatingActionButton(
+                        onClick = {
+                            Log.d("EnrollFaceScreen", "CAMERA SWITCH BUTTON CLICKED ")
+                            viewModel.toggleCameraPreview()
+
+                            Toast.makeText(
+                                context,
+                                if (viewModel.useNeurotecCamera) "Switched to Colored" else "Switched to Camera Grayscale",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        containerColor = Color(0xFF424242),
+                        contentColor = Color.White,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddCircle,
+                            contentDescription = "Switch camera",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    // Flashlight toggle button
+//                    FloatingActionButton(
+//                        onClick = { toggleFlashlight() },
+//                        containerColor = if (isFlashOn) Color(0xFFFFC107) else Color(0xFF424242),
+//                        contentColor = Color.White,
+//                        modifier = Modifier.size(48.dp)
 //                    ) {
-//                        Column(
-//                            modifier = Modifier
-//                                .fillMaxWidth()
-//                                .padding(12.dp)
-//                        ) {
-//                            Text(
-//                                text = feedback.overallMessage,
-//                                modifier = Modifier.fillMaxWidth(),
-//                                color = Color.White,
-//                                fontSize = 14.sp,
-//                                fontWeight = FontWeight.Bold,
-//                                textAlign = TextAlign.Center
-//                            )
-//
-//                            Spacer(modifier = Modifier.height(12.dp))
-//
-//                            // Individual feedback items in a compact grid
-//                            Row(
-//                                modifier = Modifier.fillMaxWidth(),
-//                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-//                            ) {
-//                                // Lighting feedback
-//                                CompactFeedbackItem(
-//                                    label = "Light",
-//                                    status = when (feedback.lightingStatus) {
-//                                        LightingStatus.GOOD -> "✓"
-//                                        LightingStatus.TOO_DARK -> "Dark"
-//                                        LightingStatus.TOO_BRIGHT -> "Bright"
-//                                        LightingStatus.UNKNOWN -> "..."
-//                                    },
-//                                    isGood = feedback.lightingStatus == LightingStatus.GOOD,
-//                                    isUnknown = feedback.lightingStatus == LightingStatus.UNKNOWN,
-//                                    modifier = Modifier.weight(1f)
-//                                )
-//
-//                                // Distance feedback
-//                                CompactFeedbackItem(
-//                                    label = "Distance",
-//                                    status = when (feedback.distanceStatus) {
-//                                        DistanceStatus.GOOD -> "✓"
-//                                        DistanceStatus.TOO_FAR -> "Far"
-//                                        DistanceStatus.TOO_CLOSE -> "Close"
-//                                        DistanceStatus.UNKNOWN -> "..."
-//                                    },
-//                                    isGood = feedback.distanceStatus == DistanceStatus.GOOD,
-//                                    isUnknown = feedback.distanceStatus == DistanceStatus.UNKNOWN,
-//                                    modifier = Modifier.weight(1f)
-//                                )
-//
-//                                // Position feedback
-//                                CompactFeedbackItem(
-//                                    label = "Position",
-//                                    status = when (feedback.positionStatus) {
-//                                        PositionStatus.CENTERED -> "✓"
-//                                        PositionStatus.MOVE_LEFT -> "←"
-//                                        PositionStatus.MOVE_RIGHT -> "→"
-//                                        PositionStatus.MOVE_UP -> "↑"
-//                                        PositionStatus.MOVE_DOWN -> "↓"
-//                                        PositionStatus.UNKNOWN -> "..."
-//                                    },
-//                                    isGood = feedback.positionStatus == PositionStatus.CENTERED,
-//                                    isUnknown = feedback.positionStatus == PositionStatus.UNKNOWN,
-//                                    modifier = Modifier.weight(1f)
-//                                )
-//
-//                                // Quality feedback
-//                                CompactFeedbackItem(
-//                                    label = "Quality",
-//                                    status = when (feedback.qualityStatus) {
-//                                        QualityStatus.EXCELLENT -> "✓✓"
-//                                        QualityStatus.GOOD -> "✓"
-//                                        QualityStatus.FAIR -> "Fair"
-//                                        QualityStatus.POOR -> "Poor"
-//                                        QualityStatus.UNKNOWN -> "..."
-//                                    },
-//                                    isGood = feedback.qualityStatus == QualityStatus.EXCELLENT ||
-//                                            feedback.qualityStatus == QualityStatus.GOOD,
-//                                    isUnknown = feedback.qualityStatus == QualityStatus.UNKNOWN,
-//                                    modifier = Modifier.weight(1f)
-//                                )
-//                            }
-//                        }
+//                        Icon(
+//                            imageVector = if (isFlashOn) Icons.Default.PlayArrow else Icons.Default.Clear,
+//                            contentDescription = if (isFlashOn) "Turn off flashlight" else "Turn on flashlight",
+//                            modifier = Modifier.size(24.dp)
+//                        )
 //                    }
-//                }
+                }
+
+
+
             }
 
             Spacer(Modifier.height(16.dp))
@@ -282,48 +229,6 @@ fun EnrollFaceScreen(
             }
 
             Spacer(Modifier.height(16.dp))
-        }
-    }
-}
-
-@Composable
-private fun CompactFeedbackItem(
-    label: String,
-    status: String,
-    isGood: Boolean,
-    isUnknown: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                isUnknown -> Color(0xFF424242).copy(alpha = 0.7f)
-                isGood -> Color(0xFF1B5E20).copy(alpha = 0.8f)
-                else -> Color(0xFFB71C1C).copy(alpha = 0.8f)
-            }
-        ),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = label,
-                color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = status,
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
         }
     }
 }

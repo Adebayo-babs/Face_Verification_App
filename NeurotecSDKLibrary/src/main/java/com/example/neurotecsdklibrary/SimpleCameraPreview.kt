@@ -1,60 +1,94 @@
 package com.example.neurotecsdklibrary
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Log
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.neurotec.biometrics.NLivenessMode
 import com.neurotec.biometrics.view.NFaceView
+import com.neurotec.devices.NCamera
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SimpleCameraPreview(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: EnrollFaceViewModel = viewModel()
 ) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
+    var currentFrame by remember { mutableStateOf<Bitmap?>(null) }
+    var lastFrameTime by remember { mutableStateOf(0L) }
 
-    val previewView = remember { PreviewView(context) }
-
-    DisposableEffect(Unit) {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-
-        cameraProviderFuture.addListener({
-            val cameraProvider = cameraProviderFuture.get()
-
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
-
-            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
-
+    // Continuously capture frames from the active camera
+    LaunchedEffect(viewModel.biometricClient) {
+        while (isActive) {
             try {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    lifecycleOwner,
-                    cameraSelector,
-                    preview
-                )
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }, ContextCompat.getMainExecutor(context))
+                withContext(Dispatchers.IO) {
+                    // Get the current active camera from biometric client
+                    val camera = viewModel.biometricClient?.faceCaptureDevice as? NCamera
 
-        onDispose {
-            cameraProviderFuture.get().unbindAll()
+                    if (camera != null && camera.isCapturing) {
+                        // Try to get current frame from the face being captured
+                        val face = viewModel.currentSubject?.faces?.firstOrNull()
+                        val imageBytes = face?.image?.save()?.toByteArray()
+
+                        if (imageBytes != null && imageBytes.isNotEmpty()) {
+                            val newBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+
+                            // Only update if we got a new frame
+                            val currentTime = System.currentTimeMillis()
+                            if (currentTime - lastFrameTime > 30) { // Throttle to ~30 FPS
+                                withContext(Dispatchers.Main) {
+                                    currentFrame = newBitmap
+                                    lastFrameTime = currentTime
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("NeurotecPreview", "Error capturing frame", e)
+            }
+            delay(33) // Poll at ~30 FPS
         }
     }
 
-    AndroidView(
-        factory = { previewView },
+    Box(
         modifier = modifier
-    )
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        currentFrame?.let { bitmap ->
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "Camera preview",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+    }
 }

@@ -95,6 +95,14 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
     private var feedbackMonitorJob: Job? = null
     private val feedbackScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
+    // Camera switch
+    var isCapturing by mutableStateOf(false)
+        private set
+
+    var useNeurotecCamera by mutableStateOf(true)
+        private set
+
+
     fun initialize() {
         executor.execute {
             try {
@@ -141,9 +149,161 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun toggleCameraPreview() {
+        useNeurotecCamera = !useNeurotecCamera
+        Log.d("EnrollFace", "Camera preview toggled to: ${if (useNeurotecCamera) "Neurotec (Colored)" else "CameraX (Grayscale)"}")
+    }
+
+
+    fun switchCamera(onComplete: ((Boolean) -> Unit)? = null) {
+        Log.d("EnrollFace", "switchCamera() called")
+
+        executor.execute {
+            try {
+                Log.d("EnrollFace", "Executor running for camera switch")
+
+                val currentCamera = biometricClient?.faceCaptureDevice
+                Log.d("EnrollFace", "Current camera: ${currentCamera?.displayName}")
+
+                if (currentCamera == null) {
+                    Log.e("EnrollFace", "No active camera found")
+                    main.post {
+                        status = "No active camera"
+                        onComplete?.invoke(false)
+                    }
+                    return@execute
+                }
+
+                val devices = biometricClient?.deviceManager?.devices
+                Log.d("EnrollFace", "Available devices: ${devices?.size}")
+
+                if (devices.isNullOrEmpty()) {
+                    Log.e("EnrollFace", "No devices available")
+                    main.post {
+                        status = "No cameras available"
+                        onComplete?.invoke(false)
+                    }
+                    return@execute
+                }
+
+                // Log all available devices
+                devices.forEachIndexed { index, device ->
+                    Log.d("EnrollFace", "Device $index: ${device.displayName}, Type: ${device.deviceType}, isCapturing: ${if (device is NCamera) device.isCapturing else "N/A"}")
+                }
+
+                // Find ALL cameras first
+                val allCameras = devices.filter { it.deviceType.contains(NDeviceType.CAMERA) } as List<NCamera>
+                Log.d("EnrollFace", "Total cameras found: ${allCameras.size}")
+
+                if (allCameras.size < 2) {
+                    Log.w("EnrollFace", "Only ${allCameras.size} camera(s) available")
+                    main.post {
+                        status = "Only one camera available"
+                        onComplete?.invoke(false)
+                    }
+                    return@execute
+                }
+
+                // Find the next camera (not the current one)
+                val currentIndex = allCameras.indexOf(currentCamera)
+                val nextIndex = (currentIndex + 1) % allCameras.size
+                val nextCamera = allCameras[nextIndex]
+
+                Log.d("EnrollFace", "Current camera index: $currentIndex, Next camera index: $nextIndex")
+                Log.d("EnrollFace", "Switching from '${currentCamera.displayName}' to '${nextCamera.displayName}'")
+
+                // Check if currently capturing
+                val wasCapturing = currentCamera.isCapturing
+                Log.d("EnrollFace", "Was capturing: $wasCapturing")
+
+                // Stop capturing if active
+                if (wasCapturing) {
+                    main.post {
+                        status = "Switching camera..."
+                        stopContinuousFeedbackMonitoring()
+                    }
+
+                    Log.d("EnrollFace", "Cancelling biometric client...")
+                    biometricClient?.cancel()
+
+                    // Wait for camera to stop capturing (with timeout)
+                    var timeoutCounter = 0
+                    while (currentCamera.isCapturing && timeoutCounter < 5000) {
+                        Thread.sleep(50)
+                        timeoutCounter += 50
+                        if (timeoutCounter % 500 == 0) {
+                            Log.d("EnrollFace", "Waiting for camera to stop... ${timeoutCounter}ms")
+                        }
+                    }
+
+                    if (currentCamera.isCapturing) {
+                        Log.e("EnrollFace", "Camera switch timeout - camera still capturing after 5 seconds")
+                        main.post {
+                            status = "Camera switch timeout"
+                            onComplete?.invoke(false)
+                        }
+                        return@execute
+                    }
+
+                    Log.d("EnrollFace", "Camera stopped successfully")
+                }
+
+                // Switch to the new camera
+                Log.d("EnrollFace", "Setting new camera as face capture device...")
+                biometricClient?.faceCaptureDevice = nextCamera
+
+                // Verify the switch
+                val verifyCamera = biometricClient?.faceCaptureDevice
+                Log.d("EnrollFace", "Verification - Current camera after switch: ${verifyCamera?.displayName}")
+
+                val cameraName = nextCamera.displayName
+                Log.d("EnrollFace", "Successfully switched to camera: $cameraName")
+
+                main.post {
+                    status = "Switched to $cameraName"
+
+                    // Restart capturing if it was active
+                    if (wasCapturing) {
+                        Log.d("EnrollFace", "Restarting capture after switch...")
+                        main.postDelayed({
+                            startAutomaticCapture()
+                        }, 500)
+                    }
+
+                    onComplete?.invoke(true)
+                }
+
+            } catch (e: Exception) {
+                Log.e("EnrollFace", "Error switching camera: ${e.message}", e)
+                e.printStackTrace()
+                main.post {
+                    status = "Camera switch error: ${e.message}"
+                    onComplete?.invoke(false)
+                }
+            }
+        }
+    }
+
+
+    fun stopCapturing() {
+        executor.execute {
+            try {
+                stopContinuousFeedbackMonitoring()
+                biometricClient?.cancel()
+                main.post {
+                    isCapturing = false
+                    status = "Capture stopped"
+                }
+            } catch (e: Exception) {
+                Log.e("EnrollFace", "Error stopping capture", e)
+            }
+        }
+    }
+
     fun startAutomaticCapture() {
         executor.execute {
             try {
+                main.post { isCapturing = true }
                 Log.d("EnrollFace", "Starting automatic capture...")
                 main.post {
                     status = "Detecting face..."
@@ -204,6 +364,7 @@ class EnrollFaceViewModel (application: Application) : AndroidViewModel(applicat
                 Log.e("EnrollFace", "Error during capture", e)
                 stopContinuousFeedbackMonitoring()
                 main.post {
+                    isCapturing = false
                     status = "Capture error. Retrying..."
                     detectionFeedback = FaceDetectionFeedback(
                         overallMessage = "Capture error. Retrying..."
