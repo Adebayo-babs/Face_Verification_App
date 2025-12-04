@@ -1,5 +1,6 @@
 package com.example.face_verification_app.ui
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -46,13 +47,20 @@ import kotlinx.coroutines.delay
 @Composable
 fun MainMenuScreen(
     isLoading: Boolean = false,
-    onChangeSAMPassword: ((String) -> Unit)? = null
+    onChangeSAMPassword: ((String) -> Unit)? = null,
+    faceVerificationEnabled: Boolean = true,
+    onToggleFaceVerification: ((Boolean) -> Unit)? = null
 ) {
 
 
     val context = LocalContext.current
-    val commonUtil = com.common.apiutil.pos.CommonUtil(context)
-    commonUtil.setRelayPower(CommonConstants.RelayType.RELAY_1, 0)
+
+    LaunchedEffect(Unit) {
+        val commonUtil = com.common.apiutil.pos.CommonUtil(context)
+        commonUtil.setRelayPower(CommonConstants.RelayType.RELAY_1, 0)
+        Log.d("MainMenuScreen", "Relay turned OFF on initialization")
+    }
+
 
     var showOptionsMenu by remember { mutableStateOf(false) }
     var showSAMPasswordDialog by remember { mutableStateOf(false) }
@@ -105,6 +113,17 @@ fun MainMenuScreen(
                         expanded = showOptionsMenu,
                         onDismissRequest = { showOptionsMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "Face Verification: ${if (faceVerificationEnabled) "ON" else "OFF"}"
+                                )
+                            },
+                            onClick = {
+                                showOptionsMenu = false
+                                onToggleFaceVerification?.invoke(!faceVerificationEnabled)
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Change SAM Password") },
                             onClick = {

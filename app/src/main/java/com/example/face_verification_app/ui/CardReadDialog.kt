@@ -65,8 +65,8 @@ fun CardReadDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = if (success) "Success" else "Failed",
-                    fontSize = 24.sp,
+                    text = if (success) "Success" else "Card removed too fast",
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black
                 )

@@ -69,11 +69,12 @@ class SAMCardReader {
         isoDep: IsoDep? = null,
         nfcDevice: Nfc? = null,
         samPassword: String,
-        samKeyIndex: Int = 0x01
+        samKeyIndex: Int = 0x01,
+        fastMode: Boolean = false
     ): SecureCardData = withContext(Dispatchers.IO) {
         when {
-            isoDep != null -> readFromIsoDep(isoDep, samPassword, samKeyIndex)
-            nfcDevice != null -> readFromTelpoNfc(nfcDevice, samPassword, samKeyIndex)
+            isoDep != null -> readFromIsoDep(isoDep, samPassword, samKeyIndex, fastMode)
+            nfcDevice != null -> readFromTelpoNfc(nfcDevice, samPassword, samKeyIndex, fastMode)
             else -> SecureCardData(
                 cardId = null,
                 surname = null,
@@ -89,7 +90,8 @@ class SAMCardReader {
     private suspend fun readFromIsoDep(
         isoDep: IsoDep,
         samPassword: String,
-        samKeyIndex: Int
+        samKeyIndex: Int,
+        fastMode: Boolean = false
     ): SecureCardData {
         var cardId: String? = null
         var holderName: String? = null
@@ -120,7 +122,8 @@ class SAMCardReader {
                 { cmd -> isoDep.transceive(cmd) },
                 samPassword,
                 samKeyIndex,
-                enumeratedData
+                enumeratedData,
+                fastMode
             )
 
             if (isAuthenticated) {
@@ -132,8 +135,23 @@ class SAMCardReader {
                 firstName = parsed["firstName"]
                 additionalInfo.putAll(parsed)
 
-                faceImage = extractFaceImage(enumeratedData)
-                fingerprintData.addAll(extractFingerprints(enumeratedData))
+                // Only extract face and fingerprints if NOT in fast mode
+                if (!fastMode) {
+                    faceImage = extractFaceImage(enumeratedData)
+                    fingerprintData.addAll(extractFingerprints(enumeratedData))
+
+                    if (faceImage != null) {
+                        Log.d(TAG, "Face image extracted: ${faceImage.size} bytes")
+                    }
+
+                    if (fingerprintData.isNotEmpty()) {
+                        Log.d(TAG, "Extracted ${fingerprintData.size} fingerprint(s)")
+                    } else {
+                        Log.w(TAG, "No fingerprint data found")
+                    }
+                } else {
+                    Log.d(TAG, "Fast mode: Skipped face and fingerprint extraction")
+                }
 
                 if (faceImage != null) {
                     Log.d(TAG, "Face image extracted: ${faceImage.size} bytes")
@@ -174,7 +192,8 @@ class SAMCardReader {
     private suspend fun readFromTelpoNfc(
         nfcDevice: Nfc,
         samPassword: String,
-        samKeyIndex: Int
+        samKeyIndex: Int,
+        fastMode: Boolean = false
     ): SecureCardData = withContext(Dispatchers.IO) {
         telpoNfcLock.withLock {
             var cardId: String? = null
@@ -209,7 +228,7 @@ class SAMCardReader {
 
                 Log.d(TAG, "SAM application selected successfully on Telpo device")
                 isAuthenticated = authenticateWithSAM(
-                    transceiveFn, samPassword, samKeyIndex, enumeratedData
+                    transceiveFn, samPassword, samKeyIndex, enumeratedData, fastMode
                 )
 
                 if (isAuthenticated) {
@@ -221,17 +240,22 @@ class SAMCardReader {
                     firstName = parsed["firstName"]
                     additionalInfo.putAll(parsed)
 
-                    faceImage = extractFaceImage(enumeratedData)
-                    fingerprintData.addAll(extractFingerprints(enumeratedData))
+                    // Only extract face and fingerprints if NOT in fast mode
+                    if (!fastMode) {
+                        faceImage = extractFaceImage(enumeratedData)
+                        fingerprintData.addAll(extractFingerprints(enumeratedData))
 
-                    if (faceImage != null) {
-                        Log.d(TAG, "Face image extracted (${faceImage.size} bytes)")
-                    }
+                        if (faceImage != null) {
+                            Log.d(TAG, "Face image extracted (${faceImage.size} bytes)")
+                        }
 
-                    if (fingerprintData.isNotEmpty()) {
-                        Log.d(TAG, "Extracted ${fingerprintData.size} fingerprint(s)")
+                        if (fingerprintData.isNotEmpty()) {
+                            Log.d(TAG, "Extracted ${fingerprintData.size} fingerprint(s)")
+                        } else {
+                            Log.w(TAG, "No fingerprint data found")
+                        }
                     } else {
-                        Log.w(TAG, "No fingerprint data found")
+                        Log.d(TAG, "Fast mode: Skipped face and fingerprint extraction")
                     }
 
                     Log.d(TAG, "Card data successfully read from Telpo device")
@@ -482,12 +506,13 @@ class SAMCardReader {
         transceive: (ByteArray) -> ByteArray,
         samPassword: String,
         keyIndex: Int,
-        enumeratedData: MutableList<EnumeratedData>
+        enumeratedData: MutableList<EnumeratedData>,
+        fastMode: Boolean = false
     ): Boolean {
         return try {
             Log.d(TAG, "Starting SAM authentication for government ID card with key index $keyIndex")
 
-            val filesFound = enumerateAndReadFiles(transceive, enumeratedData)
+            val filesFound = enumerateAndReadFiles(transceive, enumeratedData, fastMode)
 
             if (filesFound && enumeratedData.isNotEmpty()) {
                 Log.d(TAG, "Successfully read ${enumeratedData.size} records without authentication")
@@ -504,17 +529,26 @@ class SAMCardReader {
 
     private fun enumerateAndReadFiles(
         transceive: (ByteArray) -> ByteArray,
-        enumeratedData: MutableList<EnumeratedData>
+        enumeratedData: MutableList<EnumeratedData>,
+        fastMode: Boolean = false
     ): Boolean {
         var foundAny = false
 
-        // Extended SFI range to include fingerprint data (4-6)
-        val targetSFIs = listOf(1, 2, 3, 4, 5, 6)
+        // OPTIMIZATION: In fast mode, only read SFI 1 (cardholder data)
+        // In normal mode, read all SFIs including face (2, 3) and fingerprints (4, 5, 6)
+        val targetSFIs = if (fastMode) {
+            listOf(1) // Only SFI 1 for cardholder data (much faster!)
+        } else {
+            listOf(1, 2, 3, 4, 5, 6) // All SFIs for complete data
+        }
         for (sfi in targetSFIs) {
             var consecutiveFailures = 0
             val sfiRecords = mutableListOf<ByteArray>()
 
-            for (record in 1..20) {
+            // In fast mode, we typically only need 1-2 records from SFI 1
+            val maxRecords = if (fastMode && sfi == 1) 5 else 20
+
+            for (record in 1..maxRecords) {
                 try {
                     val command = byteArrayOf(
                         0x00.toByte(), 0xB2.toByte(),
