@@ -72,7 +72,6 @@ fun FaceVerificationResultScreen(
 
     LaunchedEffect(matchResult?.isMatch) {
         if (matchResult?.isMatch == true && !relayActivated) {
-
             Log.d("FaceVerification", "Activating relay")
 
             // Turn ON the relay
@@ -89,7 +88,16 @@ fun FaceVerificationResultScreen(
         }
     }
 
-//    Log.v("Relay result", relay.toString())
+    // Auto-dismiss after 5 seconds when face matches
+    LaunchedEffect(matchResult?.isMatch) {
+        if (matchResult?.isMatch == true) {
+            Log.d("FaceVerification", "Face matched, auto-dismissing in 5 seconds")
+            delay(5000)
+            onCancel()
+        }
+    }
+
+
 
 
     Column(
